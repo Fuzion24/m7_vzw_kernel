@@ -41,7 +41,11 @@
 #define SYN_UPDATE_RETRY_TIMES 5
 #define SHIFT_BITS 10
 #define SYN_WIRELESS_DEBUG
+/* #define SYN_CABLE_CONTROL */
 #define SYN_CALIBRATION_CONTROL
+/* #define SYN_FILTER_CONTROL */
+/* #define SYN_FLASH_PROGRAMMING_LOG */
+/* #define SYN_DISABLE_CONFIG_UPDATE */
 
 #define SYN_FW_NAME "tp_SYN.img"
 #define SYN_FW_TIMEOUT (30000)
@@ -162,6 +166,7 @@ static void syn_page_select(struct i2c_client *client, uint8_t page)
 	if (page ^ ts->page_select) {
 		i2c_smbus_write_byte_data(client, 0xFF, page);
 		ts->page_select = page;
+/*		printk(KERN_INFO "TOUCH: Page Select: %s: %d\n", __func__, ts->page_select); */
 	}
 
 }
@@ -429,7 +434,7 @@ static int wait_flash_interrupt(struct synaptics_ts_data *ts, int attr, int fw)
 			get_address_base(ts, 0x34, DATA_BASE) + 0x3, &data, 1);
 	if (ret < 0)
 		return i2c_syn_error_handler(ts, ts->i2c_err_handler_en, "r:3", __func__);
-	
+	/* check = 0x80 */
 	if (!(data & 0x80)) {
 		printk(KERN_INFO "[TP] Not in program enable mode, F34_data = %x\n", data);
 		ret = i2c_syn_read(ts->client,
@@ -456,7 +461,7 @@ static int enable_flash_programming(struct synaptics_ts_data *ts, int attr)
 			printk(KERN_INFO "[TP] %s: clear gpio_irq before enter bootloader mode, data = %x\n", __func__, data[0]);
 		}
 	}
-	
+	/* timing need to fine tune, no interrupt low */
 	ret = i2c_syn_read(ts->client,
 		get_address_base(ts, 0x34, QUERY_BASE), data, 2);
 	if (ret < 0)
@@ -519,6 +524,8 @@ static int disable_flash_programming(struct synaptics_ts_data *ts, int status)
 }
 
 
+/********************************************************************************************/
+/*Firmware Update*/
 static int program_fw_img(struct synaptics_ts_data *ts,
 			  const uint8_t *imgbuf, const uint16_t filelength)
 {
@@ -530,16 +537,16 @@ static int program_fw_img(struct synaptics_ts_data *ts,
 		printk(KERN_ERR "[TP] TOUCH_ERR:%s: PDT scan fail\n", __func__);
 		return -1;
 	}
-	
+	/* Read bootload ID*/
 	i2c_syn_read(ts->client, get_address_base(ts, 0x34, QUERY_BASE), data, 2);
 
-	
+	/* Write bootID to block data registers*/
 	if (ts->package_id < 3400)
 		i2c_syn_write(ts->client, get_address_base(ts, 0x34, DATA_BASE) + 0x2, data, 2);
 	else
 		i2c_syn_write(ts->client, get_address_base(ts, 0x34, DATA_BASE) + 0x1, data, 2);
 
-	
+	/* Firmware and Configuration Erase*/
 	printk(KERN_INFO "[TP][FW] Erase firmware and config\n");
 	data[0] = 0x03;
 	if (ts->package_id < 3400)
@@ -550,7 +557,7 @@ static int program_fw_img(struct synaptics_ts_data *ts,
 	if (ret < 0)
 		return ret;
 
-	
+	/* Read Block Size and Firmware Block Count */
 	memset(data, 0x0, sizeof(data));
 	if (ts->package_id < 3400)
 		i2c_syn_read(ts->client, get_address_base(ts, 0x34, QUERY_BASE) + 0x3, data, 6);
@@ -564,7 +571,7 @@ static int program_fw_img(struct synaptics_ts_data *ts,
 		blocksize, fwcnt, cfgcnt);
 #endif
 
-	
+	/* Program the Firmware Image */
 	printk(KERN_INFO "[TP][FW] Program firmware\n");
 	for (i = 0; i < fwcnt; i++)
 	{
@@ -575,12 +582,12 @@ static int program_fw_img(struct synaptics_ts_data *ts,
 
 		i2c_syn_write(ts->client, get_address_base(ts, 0x34, DATA_BASE), data, 3 + blocksize);
 
-		
+		/* Wait for ATTN and check if flash command state is idle */
 		ret = wait_flash_interrupt(ts, ts->gpio_irq, 1);
 		if (ret < 0)
 			return ret;
 	}
-	
+	/* Program the Configuration Image */
 	printk(KERN_INFO "[TP][FW] Program config\n");
 	for (i = 0; i < cfgcnt; i++) {
 		data[0] = i & 0xFF;
@@ -591,13 +598,13 @@ static int program_fw_img(struct synaptics_ts_data *ts,
 
 		i2c_syn_write(ts->client, get_address_base(ts, 0x34, DATA_BASE), data, 3 + blocksize);
 
-		
+		/* Wait for ATTN and check if flash command state is idle */
 		ret = wait_flash_interrupt(ts, ts->gpio_irq, 1);
 		if (ret < 0)
 			return ret;
 	}
 
-	
+	/* Disable Flash programming */
 	printk(KERN_INFO "[TP][FW] Disable flash programming\n");
 	disable_flash_programming(ts, 1);
 	return 0;
@@ -607,7 +614,7 @@ static int syn_firmware_update(struct synaptics_ts_data *ts)
 {
 	int ret = 0, i = 0;
 	uint prnum = 0;
-	uint8_t  start_addr = 0;
+	uint8_t /*pagetable[18] = {0},*/ start_addr = 0;
 	u8 *pos, *pos_end;
 	char prstr[10] = {0};
 	const struct firmware *fw;
@@ -622,9 +629,9 @@ static int syn_firmware_update(struct synaptics_ts_data *ts)
 		goto SYN_FW_REQUEST_FAILUE;
 	}
 	if (fw->data[0] == 'T' && fw->data[1] == 'P') {
-		pos = strchr(fw->data, 'R');				
+		pos = strchr(fw->data, 'R');				/*PR# position*/
 
-		pos_end    = strchr(fw->data, '\n');                    
+		pos_end    = strchr(fw->data, '\n');                    /* Firmware data begin */
 		start_addr = pos_end - fw->data + 1;
 		memcpy(prstr, &fw->data[(pos - fw->data + 1)], 7);
 		ret        = strict_strtoul(prstr, 10, (unsigned long*)&prnum);
@@ -639,7 +646,7 @@ static int syn_firmware_update(struct synaptics_ts_data *ts)
 		if (prnum != ts->packrat_number) {
 			printk(KERN_INFO "[TP][FW] PR number is not the same, firmware update...\n");
 
-			mutex_lock(&syn_fw_mutex);	
+			mutex_lock(&syn_fw_mutex);	/*syn fw Mutex*/
 			for (i = 0; i < 5; i++) {
 				if (!enable_flash_programming(ts, ts->gpio_irq)) {
 					printk(KERN_INFO "[TP][FW] Enable flash ok\n");
@@ -662,7 +669,7 @@ static int syn_firmware_update(struct synaptics_ts_data *ts)
 				ret = -2;
 				goto SYN_FW_FAILUE;
 			}
-			mutex_unlock(&syn_fw_mutex);
+			mutex_unlock(&syn_fw_mutex);/*syn fw Mutex*/
 		} else {
 			printk(KERN_INFO "[TP][FW] PR number is the same. Ignored\n");
 			ret = 1;
@@ -698,6 +705,8 @@ static int syn_fw_update_init(void *arg)
 
 	return ret;
 }
+/*Firmware Update*/
+/********************************************************************************************/
 
 static int get_int_mask(uint8_t number, uint8_t offset)
 {
@@ -716,6 +725,7 @@ static uint32_t syn_crc(uint16_t *data, uint16_t len)
 		sum2 += sum1;
 		sum1 = (sum1 & 0xFFFF) + (sum1 >> 16);
 		sum2 = (sum2 & 0xFFFF) + (sum2 >> 16);
+/*		printk("Data: %x, Sum1: %x, Sum2: %x\n", *data, sum1, sum2); */
 	}
 	return sum1 | (sum2 << 16);
 }
@@ -786,7 +796,7 @@ static int program_config(struct synaptics_ts_data *ts, uint8_t *config, int att
 
 	ret = i2c_syn_read(ts->client,
 		get_address_base(ts, 0x34, QUERY_BASE), data, 2);
-	
+	/* printk("%s: data: %x, %x\n", __func__, data[0], data[1]); */
 	if (ret < 0)
 		return i2c_syn_error_handler(ts, ts->i2c_err_handler_en, "r:1", __func__);
 
@@ -799,7 +809,7 @@ static int program_config(struct synaptics_ts_data *ts, uint8_t *config, int att
 	if (ret < 0)
 		return i2c_syn_error_handler(ts, ts->i2c_err_handler_en, "w:2", __func__);
 
-	
+	/* printk("ATT: %d\n", gpio_get_value(attr)); */
 	if (ts->package_id < 3400)
 		ret = i2c_syn_write_byte_data(ts->client,
 			get_address_base(ts, 0x34, DATA_BASE) + 18, 0x07);
@@ -1344,7 +1354,7 @@ static ssize_t syn_unlock_store(struct device *dev,
 
 			if ( ts->PixelTouchThreshold_bef_unlock ) {
 				ret = i2c_syn_write_byte_data(ts->client,
-					get_address_base(ts, 0x54, CONTROL_BASE) + 0x04, ts->PixelTouchThreshold_aft_unlock);
+					get_address_base(ts, 0x54, CONTROL_BASE) + 0x04, ts->PixelTouchThreshold_aft_unlock);/* default value */
 				if (ret < 0)
 					return i2c_syn_error_handler(ts, ts->i2c_err_handler_en, "F54_ANALOG_CTRL03 Pixel Touch Threshold", __func__);
 				printk(KERN_INFO "[TP] %s: set F54_ANALOG_CTRL03 Pixel Touch Threshold: %x\n", __func__, ts->PixelTouchThreshold_aft_unlock);
@@ -1857,7 +1867,7 @@ static int synaptics_init_panel(struct synaptics_ts_data *ts)
 {
 	int ret = 0;
 
-	
+	/* Configured */
 	ret = i2c_syn_write_byte_data(ts->client,
 			get_address_base(ts, 0x01, CONTROL_BASE), 0x80);
 	if (ret < 0)
@@ -2027,7 +2037,7 @@ static void synaptics_ts_finger_func(struct synaptics_ts_data *ts)
 #endif
 		}
 		if (ts->finger_pressed != finger_pressed
-			) {
+			/*&& (ts->pre_finger_data[0][0] < 2 || ts->htc_event == SYN_AND_REPORT_TYPE_B || ts->filter_level[0])*/) {
 			finger_press_changed = ts->finger_pressed ^ finger_pressed;
 			finger_release_changed = finger_press_changed & ts->finger_pressed;
 			finger_press_changed &= finger_pressed;
@@ -2090,10 +2100,11 @@ static void synaptics_ts_finger_func(struct synaptics_ts_data *ts)
 			}
 		}
 
-		if (finger_pressed == 0 
-) {
+		if (finger_pressed == 0 /*||
+			((ts->grip_suppression | ts->grip_b_suppression) == finger_pressed
+			&& finger_release_changed)*/) {
 			if (ts->htc_event == SYN_AND_REPORT_TYPE_A) {
-				
+				/*input_report_abs(ts->input_dev, ABS_MT_TOUCH_MAJOR, 0); */
 				if (ts->support_htc_event) {
 					input_report_abs(ts->input_dev, ABS_MT_AMPLITUDE, 0);
 					input_report_abs(ts->input_dev, ABS_MT_POSITION, 1 << 31);
@@ -2577,6 +2588,8 @@ static irqreturn_t synaptics_irq_thread(int irq, void *ptr)
 
 	if (ts->debug_log_level & BIT(2)) {
 			getnstimeofday(&timeStart);
+			/*printk(KERN_INFO "[TP] Irq start time = %ld.%06ld s\n",
+				timeStart.tv_sec, timeStart.tv_nsec/1000);*/
 	}
 
 	ret = i2c_syn_read(ts->client, get_address_base(ts, 0x01, DATA_BASE) + 1, &buf, 1);
@@ -2597,6 +2610,8 @@ static irqreturn_t synaptics_irq_thread(int irq, void *ptr)
 					getnstimeofday(&timeEnd);
 					timeDelta.tv_nsec = (timeEnd.tv_sec*1000000000+timeEnd.tv_nsec)
 						-(timeStart.tv_sec*1000000000+timeStart.tv_nsec);
+					/*printk(KERN_INFO "[TP] Irq finish time = %ld.%06ld s\n",
+						timeEnd.tv_sec, timeEnd.tv_nsec/1000);*/
 					printk(KERN_INFO "[TP] Touch latency = %ld us\n", timeDelta.tv_nsec/1000);
 				}
 			}
@@ -3058,7 +3073,7 @@ static int syn_probe_init(void *arg)
 	if (board_mfg_mode() == MFG_MODE_OFFMODE_CHARGING) {
 		printk(KERN_INFO "[TP] %s: offmode charging. Set touch chip to sleep mode and skip touch driver probe\n", __func__);
 		ret = i2c_syn_write_byte_data(ts->client,
-					get_address_base(ts, 0x01, CONTROL_BASE), 0x01); 
+					get_address_base(ts, 0x01, CONTROL_BASE), 0x01); /* sleep */
 		if (ret < 0)
 			i2c_syn_error_handler(ts, ts->i2c_err_handler_en, "sleep: 0x01", __func__);
 		ret = -ENODEV;
@@ -3119,12 +3134,37 @@ static int syn_probe_init(void *arg)
 		ts->psensor_detection = pdata->psensor_detection;
 		ts->PixelTouchThreshold_bef_unlock = pdata->PixelTouchThreshold_bef_unlock;
 #ifdef SYN_CABLE_CONTROL
-		ts->cable_support = pdata->cable_support; 
+		ts->cable_support = pdata->cable_support; /* Reserve */
 #endif
 		ts->config = pdata->config;
 		if (pdata->virtual_key)
 			ts->button = pdata->virtual_key;
 	}
+/*		if (pdata->abs_x_max  == 0 && pdata->abs_y_max == 0) {
+			ts->layout[0] = ts->layout[2] = 0;
+			ts->layout[1] = ts->max[0];
+			ts->layout[3] = ts->max[1];
+		} else {
+			ts->layout[0] = pdata->abs_x_min;
+			ts->layout[1] = pdata->abs_x_max;
+			ts->layout[2] = pdata->abs_y_min;
+			ts->layout[3] = pdata->abs_y_max;
+		}
+		if (get_address_base(ts, 0x19, FUNCTION)) {
+			i2c_syn_read(ts->client, get_address_base(ts, 0x19, QUERY_BASE) + 1,
+				&ts->key_number, 1);
+			for (i = 0; i < ts->key_number; i++) {
+				ts->key_postion_x[i] =
+					(ts->layout[1] - ts->layout[0]) * (i * 2 + 1) / (ts->key_number * 2)
+					+ ts->layout[0];
+				printk(KERN_INFO "ts->key_postion_x[%d]: %d\n",
+					i, ts->key_postion_x[i]);
+			}
+			ts->key_postion_y = ts->layout[2] +
+				(21 * (ts->layout[3] - ts->layout[2]) / 20);
+			printk(KERN_INFO "ts->key_postion_y: %d\n", ts->key_postion_y);
+		}
+	}*/
 
 #ifndef SYN_DISABLE_CONFIG_UPDATE
 	for (i=0; i<SYN_UPDATE_RETRY_TIMES; i++) {
@@ -3276,7 +3316,7 @@ static int syn_probe_init(void *arg)
 #ifdef SYN_CABLE_CONTROL
 	if (ts->cable_support) {
 		usb_register_notifier(&cable_status_handler);
-		
+		/* reserve for new version */
 		ret = i2c_syn_read(ts->client,
 			get_address_base(ts, ts->finger_func_idx, CONTROL_BASE), &ts->cable_config, 1);
 		if (ret < 0) {
@@ -3601,7 +3641,7 @@ static int synaptics_ts_suspend(struct i2c_client *client, pm_message_t mesg)
 	else {
 		if (ts->packrat_number >= SYNAPTICS_FW_2IN1_PACKRAT) {
 			ret = i2c_syn_write_byte_data(client,
-				get_address_base(ts, 0x01, CONTROL_BASE), 0x01); 
+				get_address_base(ts, 0x01, CONTROL_BASE), 0x01); /* sleep */
 			if (ret < 0)
 				i2c_syn_error_handler(ts, ts->i2c_err_handler_en, "sleep: 0x01", __func__);
 		} else {
@@ -3611,12 +3651,12 @@ static int synaptics_ts_suspend(struct i2c_client *client, pm_message_t mesg)
 #endif
 			 ) {
 				ret = i2c_syn_write_byte_data(client,
-					get_address_base(ts, 0x01, CONTROL_BASE), 0x02); 
+					get_address_base(ts, 0x01, CONTROL_BASE), 0x02); /* sleep without calibration*/
 				if (ret < 0)
 					i2c_syn_error_handler(ts, ts->i2c_err_handler_en, "sleep: 0x02", __func__);
 			} else {
 				ret = i2c_syn_write_byte_data(client,
-					get_address_base(ts, 0x01, CONTROL_BASE), 0x01); 
+					get_address_base(ts, 0x01, CONTROL_BASE), 0x01); /* sleep */
 				if (ret < 0)
 					i2c_syn_error_handler(ts, ts->i2c_err_handler_en, "sleep: 0x01", __func__);
 			}
@@ -3647,7 +3687,7 @@ static int synaptics_ts_resume(struct i2c_client *client)
 		if (ts->lpm_power)
 			ts->lpm_power(0);
 		ret = i2c_syn_write_byte_data(client,
-			get_address_base(ts, 0x01, CONTROL_BASE), 0x00); 
+			get_address_base(ts, 0x01, CONTROL_BASE), 0x00); /* wake */
 		if (ret < 0)
 			i2c_syn_error_handler(ts, ts->i2c_err_handler_en, "wake up", __func__);
 	}

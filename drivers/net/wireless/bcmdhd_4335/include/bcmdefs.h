@@ -55,6 +55,9 @@
 #define CONST	const
 #ifndef BCMFASTPATH
 #if defined(__ARM_ARCH_7A__)
+//It will cause unwind warning logs
+//#define BCMFASTPATH		__attribute__ ((__section__ (".text.fastpath")))
+//#define BCMFASTPATH_HOST	__attribute__ ((__section__ (".text.fastpath_host")))
 #define BCMFASTPATH
 #define BCMFASTPATH_HOST
 #else

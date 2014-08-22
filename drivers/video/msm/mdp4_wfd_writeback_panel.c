@@ -43,8 +43,8 @@ static struct msm_fb_panel_data writeback_msm_panel_data = {
 		.wait_cycle = 0,
 		.bpp = 24,
 		.fb_num = 1,
-		
-		.clk_rate = 177780000,
+		//.clk_rate = 74250000,
+		.clk_rate = 177780000,//for tearing
 	},
 };
 
@@ -81,4 +81,5 @@ fail_driver_registration:
 	return rc;
 }
 
+//module_init(writeback_panel_init);
 late_initcall(writeback_panel_init);

@@ -51,7 +51,7 @@ static struct YushanII_info_t yushanII_info = {
 static struct class *yushanII_class;
 static dev_t yushanII_devno;
 
-static struct msm_sensor_ctrl_t *g_sensor = NULL;	
+static struct msm_sensor_ctrl_t *g_sensor = NULL;	/* HTC_START Steven 20130528 fix bad frame issue with quick launc on ov4688 sensor */
 
 int yushanII_intr0, yushanII_intr1;
 atomic_t interrupt, interrupt2;
@@ -121,8 +121,8 @@ void YushanII_login_stop(void){
 
 void YushanII_default_exp(void){
 	Ilp0100_structFrameParams long_exp,short_exp;
-	
-	
+	/*TODO:init exposure should bring from vd6869*/
+	/*update long exposure*/
 	long_exp.AnalogGainCodeBlue = 128;
 	long_exp.AnalogGainCodeGreen = 128;
 	long_exp.AnalogGainCodeRed = 128;
@@ -133,7 +133,7 @@ void YushanII_default_exp(void){
 
 	Ilp0100_updateSensorParamsLong(long_exp);
 
-	
+	/*update short exposure*/
 	short_exp.AnalogGainCodeBlue = 128;
 	short_exp.AnalogGainCodeGreen = 128;
 	short_exp.AnalogGainCodeRed = 128;
@@ -148,22 +148,23 @@ void YushanII_default_exp(void){
 
 int  YushanII_set_default_IQ2(void)
 {
-	
+	/*channel offset*/
 	int channel_offset = 0;
 	YushanII_set_channel_offset(channel_offset);
 
 	return 0;
 }
 
+/* HTC_START steven wu addd debug mode of Y2 pipe 20121119*/
 int  YushanII_set_default_IQ(struct msm_sensor_ctrl_t *sensor)
 {
-	
+	/*channel offset*/
 	int channel_offset = 64;
-	
+	/*tone mapping*/
 	int tone_map = 46;
-	
+	/*defect correction*/
 	int disable_defcor = 0;
-	
+	/*CLS*/
 	struct yushanii_cls cls;
 	cls.cls_enable = 0;
 	cls.color_temp = 5000;
@@ -177,8 +178,10 @@ int  YushanII_set_default_IQ(struct msm_sensor_ctrl_t *sensor)
 	YushanII_set_cls(&cls);
 	return 0;
 }
+/* HTC_END steven wu addd debug mode of Y2 pipe 20121119*/
 
 
+/* HTC_START steven pixel order select from board info 20121204 */
 void YushanII_set_pixel_order(
 	struct msm_sensor_ctrl_t *sensor,
 	Ilp0100_structSensorParams *YushanII_sensor)
@@ -207,6 +210,7 @@ void YushanII_set_pixel_order(
 		YushanII_sensor->PixelOrder);
 
 }
+/* HTC_END steven pixel order select from board info 20121204 */
 void YushanII_set_parm(
 	struct msm_sensor_ctrl_t *sensor, int res,
 	Ilp0100_structInit *YushanII_init,
@@ -241,12 +245,12 @@ void YushanII_set_parm(
 	YushanII_init->ExternalClock = 24000000;
 	YushanII_init->ClockUsed = ILP0100_CLOCK;
 
-	
+	/* HTC_START steven bring sensor parms 20121119 */
 	YushanII_init->UsedSensorInterface = UsedSensorInterface;
 	if(sensor->sensordata->hdr_mode){
 		YushanII_init->IntrEnablePin1 = ENABLE_HTC_INTR;
 		YushanII_init->IntrEnablePin2 = ENABLE_RECOMMENDED_DEBUG_INTR_PIN1;
-	}else{ 
+	}else{ /*disable interrupt in non-hdr mode*/
 		YushanII_init->IntrEnablePin1 = ENABLE_NO_INTR;
 		YushanII_init->IntrEnablePin2 = ENABLE_NO_INTR;
 	}
@@ -254,8 +258,8 @@ void YushanII_set_parm(
 	if (sensor->func_tbl->sensor_yushanII_set_parm)
 	    sensor->func_tbl->sensor_yushanII_set_parm (sensor,res,YushanII_sensor);
 
-	
-	YushanII_set_pixel_order(sensor,YushanII_sensor);	
+	/*pixel order output from sensor*/
+	YushanII_set_pixel_order(sensor,YushanII_sensor);	/* HTC_START steven pixel order select from board info 20121204 */
 
 
 	#ifdef YUSHANII_CONFIG_DUMP
@@ -355,23 +359,23 @@ void YushanII_set_frontcam_parm(
 	YushanII_init->ExternalClock = 24000000;
 	YushanII_init->ClockUsed = ILP0100_CLOCK;
 
-	
+	/* HTC_START steven bring sensor parms 20121119 */
 	YushanII_init->UsedSensorInterface = SENSOR_1;
 	YushanII_init->IntrEnablePin1 = ENABLE_NO_INTR;
 	YushanII_init->IntrEnablePin2 = ENABLE_NO_INTR;
-	
+	/* HTC_END steven bring sensor parms 20121119 */
 
-	
+	/*this should be sensor maximum y size, not sensor resolution*/
 	YushanII_sensor->FullActiveLines =
 		sensor->msm_sensor_reg->output_settings[MSM_SENSOR_RES_FULL].y_output;
-	
+	/*this should be sensor maximum x size, not sensor resolution*/
 	YushanII_sensor->FullActivePixels =
 		sensor->msm_sensor_reg->output_settings[MSM_SENSOR_RES_FULL].x_output;
-	
+	/*this should be minimum LineLength of the sensor*/
 	YushanII_sensor->MinLineLength =
 		sensor->msm_sensor_reg->output_settings[MSM_SENSOR_RES_FULL].line_length_pclk;
-	
-	YushanII_set_pixel_order(sensor,YushanII_sensor);	
+	/*pixel order output from sensor*/
+	YushanII_set_pixel_order(sensor,YushanII_sensor);	/* HTC_START steven pixel order select from board info 20121204 */
 	YushanII_sensor->StatusNbLines = 0;
 
 	#ifdef YUSHANII_CONFIG_DUMP
@@ -435,8 +439,8 @@ void YushanII_set_frontcam_outputformat(struct msm_sensor_ctrl_t *sensor,int res
 			break;
 	}
 
-	
-	
+	/* HTC_START steven bring sensor parms 20121119 */
+	/*status line configuration*/
 	output_format->StatusLinesOutputted = FALSE;
 	output_format->StatusNbLines = 0;
 	output_format->ImageOrientation = sensor->sensordata->sensor_platform_info->mirror_flip;
@@ -444,19 +448,19 @@ void YushanII_set_frontcam_outputformat(struct msm_sensor_ctrl_t *sensor,int res
 
 	output_format->StatusLineLengthPixels =
 		sensor->msm_sensor_reg->output_settings[res].x_output;
-	
+	/* HTC_END steven bring sensor parms 20121119 */
 
 	output_format->MinInterframe =
 		(output_format->FrameLengthLines -
 		output_format->ActiveFrameLengthLines -
-		output_format->StatusNbLines);
+		output_format->StatusNbLines);//206;//HDR mode
 
 	output_format->AutomaticFrameParamsUpdate = TRUE;
 	output_format->HDRMode = HDR_NONE;
 	output_format->Hoffset = 0;
 	output_format->Voffset = 0;
 
-	
+	/*TOOD:only vd6869 should provide this value*/
 	output_format->HScaling = 1;
 	output_format->VScaling = 1;
 	output_format->Binning = 0x11;
@@ -492,9 +496,9 @@ void YushanII_init_backcam(struct msm_sensor_ctrl_t *sensor,int res){
 		__func__, res,sensor->msm_sensor_reg->output_settings[res].is_hdr);
 	YushanII_login_start();
 
-	g_sensor = sensor;	
+	g_sensor = sensor;	/* HTC_START Steven 20130528 fix bad frame issue with quick launc on ov4688 sensor */
 
-	
+	/*check video hdr*/
 	if(sensor->msm_sensor_reg->output_settings[res].is_hdr)
 		sensor->sensordata->hdr_mode = 1;
 	else
@@ -514,7 +518,7 @@ void YushanII_init_backcam(struct msm_sensor_ctrl_t *sensor,int res){
 			sensor->msm_sensor_reg->output_settings[res].op_pixel_clk;
 	}
 
-	
+	/*check binning mode*/
 	if(sensor->msm_sensor_reg->output_settings[res].op_pixel_clk != Previous_MIPIclock){
 		reinit = true;
 		Previous_MIPIclock =
@@ -530,12 +534,12 @@ void YushanII_init_backcam(struct msm_sensor_ctrl_t *sensor,int res){
 
 	YushanII_set_outputformat(sensor,res,&output_format);
 
-	
+	/*disable interrupt*/
 	Ilp0100_interruptDisable(0xFFFFFFFF, INTR_PIN_0);
 	Ilp0100_interruptDisable(0xFFFFFFFF, INTR_PIN_1);
 
 	if(sensor->sensordata->hdr_mode){
-		
+		/*enable interrupt*/
 		Ilp0100_interruptEnable(ENABLE_HTC_INTR, INTR_PIN_0);
 		Ilp0100_interruptEnable(ENABLE_RECOMMENDED_DEBUG_INTR_PIN1, INTR_PIN_1);
 		if (sensor->yushanII_switch_virtual_channel) {
@@ -545,13 +549,13 @@ void YushanII_init_backcam(struct msm_sensor_ctrl_t *sensor,int res){
 		pr_info("[CAM]%s, YushanII HDR mode", __func__);
 		Ilp0100_defineMode(output_format);
 		YushanII_default_exp();
-		
+		/*by pass mode*/
 		#ifdef HDR_COLOR_BAR
 		Ilp0100_startTestMode(BYPASS_NO_BYPASS, TEST_COLORBAR);
 		#endif
 
 	}else{
-		
+		/*enable interrupt*/
 		Ilp0100_interruptEnable(ENABLE_NO_INTR, INTR_PIN_0);
 		Ilp0100_interruptEnable(ENABLE_RECOMMENDED_DEBUG_INTR_PIN1, INTR_PIN_1);
 		if (sensor->yushanII_switch_virtual_channel) {
@@ -566,10 +570,10 @@ void YushanII_init_backcam(struct msm_sensor_ctrl_t *sensor,int res){
 	}
 
 	#ifdef BYPASS_MODE
-	Ilp0100_startTestMode(BYPASS_ALL, TEST_NO_TEST_MODE);  
+	Ilp0100_startTestMode(BYPASS_ALL, TEST_NO_TEST_MODE);  //BYPASS_ALL	BYPASS_NO_BYPASS
 	#endif
 
-	YushanII_set_default_IQ(sensor);	
+	YushanII_set_default_IQ(sensor);	/* HTC_START steven wu addd debug mode of Y2 pipe 20121119*/
 }
 
 void YushanII_init_frontcam(struct msm_sensor_ctrl_t *sensor,int res){
@@ -585,12 +589,12 @@ void YushanII_init_frontcam(struct msm_sensor_ctrl_t *sensor,int res){
 
 	YushanII_login_start();
 
-	g_sensor = sensor;	
+	g_sensor = sensor;	/* HTC_START Steven 20130528 fix bad frame issue with quick launc on ov4688 sensor */
 
 	sensor->sensordata->hdr_mode = 0;
 
 	YushanII_set_frontcam_parm(sensor,res,&YushanII_init,&YushanII_sensor);
-	
+	//YushanII_set_parm(sensor,res,&YushanII_init,&YushanII_sensor,SENSOR_1);
 
 	if(reload_firmware){
 		Ilp0100_readFirmware(sensor, &YushanII_InitFirmware);
@@ -599,10 +603,10 @@ void YushanII_init_frontcam(struct msm_sensor_ctrl_t *sensor,int res){
 		pr_info("[CAM]%s, firmware version major:%d minor:%d", __func__, pMajorNumber,pMinorNumber);
 		Ilp0100_getApiVersionNumber(&pMajorAPINum, &pMinorAPINum);
 		pr_info("[CAM]%s, API version major:%d minor:%d", __func__, pMajorAPINum,pMinorAPINum);
-		
+		/*disable interrupt*/
 		Ilp0100_interruptDisable(0xFFFFFFFF, INTR_PIN_0);
 		Ilp0100_interruptDisable(0xFFFFFFFF, INTR_PIN_1);
-		
+		/*enable interrupt*/
 		Ilp0100_interruptEnable(ENABLE_NO_INTR, INTR_PIN_0);
 		Ilp0100_interruptEnable(ENABLE_ALL_ERROR_INTR, INTR_PIN_1);
 		reload_firmware = 0;
@@ -629,9 +633,9 @@ void YushanII_init_frontcam(struct msm_sensor_ctrl_t *sensor,int res){
 
 void YushanII_Init(struct msm_sensor_ctrl_t *sensor,int res)
 {
-	if(sensor->sensordata->camera_type == BACK_CAMERA_2D){
+	if(sensor->sensordata->camera_type == BACK_CAMERA_2D){/*back camera*/
 		YushanII_init_backcam(sensor,res);
-	}else{
+	}else{/*from camera*/
 		YushanII_init_frontcam(sensor,res);
 	}
 }
@@ -849,7 +853,7 @@ open_read_id_retry:
 	atomic_set(&interrupt, 0);
 	atomic_set(&interrupt2, 0);
 
-	
+	/*create irq*/
 	rc = request_irq(pdata->rawchip_intr0, yushanII_irq_handler,
 		IRQF_TRIGGER_HIGH, "yushanII_irq", 0);
 	if (rc < 0) {
@@ -866,8 +870,8 @@ open_read_id_retry:
 
 	YushanIICtrl->rawchip_init = 0;
 	YushanIICtrl->total_error_interrupt_times = 0;
-	
-		
+	//for (i = 0; i < TOTAL_INTERRUPT_COUNT; i++)
+		//YushanIICtrl->error_interrupt_times[i] = 0;
 	atomic_set(&YushanIICtrl->check_intr0, 0);
 	atomic_set(&YushanIICtrl->check_intr1, 0);
 	yushanII_intr0 = pdata->rawchip_intr0;
@@ -966,14 +970,30 @@ static unsigned int YushanII_fops_poll(struct file *filp,
 
 int YushanII_got_INT0(void __user *argp){
 	struct yushanii_stats_event_ctrl event;
-	static int got_short = 0;	
+	static int got_short = 0;	/* HTC_START Steven 20130528 fix bad frame issue with quick launc on ov4688 sensor */
 
 	Ilp0100_interruptReadStatus(&pInterruptId, INTR_PIN_0);
-	
+	//pr_info("pInterruptId:%d (0x%x)",pInterruptId,pInterruptId);
 	event.type = pInterruptId;
 
 	Ilp0100_interruptClearStatus(pInterruptId, INTR_PIN_0);
 	enable_irq(yushanII_intr0);
+
+	/* HTC_START Steven 20130528 fix bad frame issue with quick launc on ov4688 sensor */
+	if (pInterruptId & START_OF_SHORTFRAME) {	/* HTC_START Steven 20130812 filter short SOF interrupt on ov4688 sensor */
+		if (g_sensor->func_tbl->sensor_yushanII_ae_updated) {
+			if (g_sensor->func_tbl->sensor_yushanII_ae_updated() == 0) {
+				got_short++;
+				if (got_short >= 2) {
+					if (g_sensor->func_tbl->sensor_yushanII_active_hold)
+						g_sensor->func_tbl->sensor_yushanII_active_hold();
+					got_short = 0;
+				}
+			}
+		}
+	}
+	/* HTC_END Steven 20130528 fix bad frame issue with quick launc on ov4688 sensor */
+
 	switch(pInterruptId){
 		case SPI_COMMS_READY:
 			pr_info("[CAM]%s, SPI_COMMS_READY", __func__);
@@ -987,18 +1007,6 @@ int YushanII_got_INT0(void __user *argp){
 		case MODE_CHANGE_COMPLETE:
 			pr_info("[CAM]%s, MODE_CHANGE_COMPLETE", __func__);
 			break;
-		case START_OF_SHORTFRAME:
-			if (g_sensor->func_tbl->sensor_yushanII_ae_updated) {
-				if (g_sensor->func_tbl->sensor_yushanII_ae_updated() == 0) {
-					got_short++;
-					if (got_short >= 2) {
-						if (g_sensor->func_tbl->sensor_yushanII_active_hold)
-							g_sensor->func_tbl->sensor_yushanII_active_hold();
-						got_short = 0;
-					}
-				}
-			}
-			break;
 	}
 	if(copy_to_user((void *)argp, &event, sizeof(struct yushanii_stats_event_ctrl))){
 		pr_err("[CAM]%s, copy to user error\n", __func__);
@@ -1008,7 +1016,7 @@ int YushanII_got_INT0(void __user *argp){
 }
 
 int YushanII_got_INT1(void){
-	
+	/*TODO:should handle error when error occure*/
 	Ilp0100_interruptReadStatus(&pInterruptId2, INTR_PIN_1);
 	pr_info("[CAM]pInterruptId2 : 0x%x",pInterruptId2);
 	Ilp0100_interruptClearStatus(pInterruptId2, INTR_PIN_1);
@@ -1079,10 +1087,10 @@ int YushanII_set_defcor(int disable_defcor){
 	Ilp0100_structDefcorParams DefcorParams;
 	pr_info("[CAM] %s, set disable defcor correction:%d", __func__, disable_defcor);
 
-	DefcorParams.BlackStrength = 15;
-	DefcorParams.CoupletThreshold = 200;
-	DefcorParams.SingletThreshold = 11;
-	DefcorParams.WhiteStrength = 15;
+	DefcorParams.BlackStrength = 16;
+	DefcorParams.CoupletThreshold = 150;
+	DefcorParams.SingletThreshold = 20;
+	DefcorParams.WhiteStrength = 16;
 
 	if (disable_defcor == 1) {
 		DefcorConfig.Mode = OFF;
@@ -1098,6 +1106,61 @@ int YushanII_set_defcor(int disable_defcor){
 	return 0;
 }
 
+static int YushanII_set_defcor_level(void __user *argp) {
+	Ilp0100_structDefcorConfig DefcorConfig;
+	Ilp0100_structDefcorParams DefcorParams;
+
+	defcor_level_t defcor_level;
+	bool_t defcorParamsUpdate = FALSE;
+
+	if(copy_from_user(&defcor_level, argp,
+		sizeof(defcor_level_t))) {
+		pr_err("[CAM] copy from user error\n");
+		return -EFAULT;
+	}
+
+	switch(defcor_level) {
+	case DEFCOR_LEVEL_0:
+		DefcorConfig.Mode = OFF;
+		defcorParamsUpdate = FALSE;
+		break;
+	case DEFCOR_LEVEL_1:
+		DefcorConfig.Mode = SINGLET_AND_COUPLET;
+		DefcorParams.BlackStrength = 16;
+		DefcorParams.CoupletThreshold = 150;
+		DefcorParams.SingletThreshold = 20;
+		DefcorParams.WhiteStrength = 16;
+		defcorParamsUpdate = TRUE;
+		break;
+	case DEFCOR_LEVEL_2:
+		DefcorConfig.Mode = SINGLET_AND_COUPLET;
+		DefcorParams.BlackStrength = 16;
+		DefcorParams.CoupletThreshold = 200;
+		DefcorParams.SingletThreshold = 12;
+		DefcorParams.WhiteStrength = 16;
+		defcorParamsUpdate = TRUE;
+		break;
+	default:
+		DefcorConfig.Mode = SINGLET_AND_COUPLET;
+		DefcorParams.BlackStrength = 16;
+		DefcorParams.CoupletThreshold = 150;
+		DefcorParams.SingletThreshold = 20;
+		DefcorParams.WhiteStrength = 16;
+		defcorParamsUpdate = TRUE;
+		break;
+	}
+
+	/* pr_info("%s, defcor_level %d", __func__, defcor_level); */
+	Ilp0100_configDefcorShortOrNormal(DefcorConfig);
+	Ilp0100_configDefcorLong(DefcorConfig);
+
+	if (defcorParamsUpdate) {
+		Ilp0100_updateDefcorShortOrNormal(DefcorParams);
+		Ilp0100_updateDefcorLong(DefcorParams);
+	}
+
+	return 0;
+}
 
 void YushanII_correct_StaturatedPixel(
 	Ilp0100_structGlaceStatsData *glace_long,GlaceStatsData *glace)
@@ -1209,7 +1272,7 @@ int YushanII_set_cls(struct yushanii_cls *cls){
 	pr_info("[CAM] %s cls_enable:%d", __func__, cls->cls_enable);
         pr_info("[CAM] %s color_temp:%d", __func__, cls->color_temp);
 	Cls_config.Enable = (bool_t)cls->cls_enable;
-	parm.BowlerCornerGain = 100; 
+	parm.BowlerCornerGain = 100; // [0;100] 100 means 100%
 	parm.ColorTempKelvin = cls->color_temp;
 	Ilp0100_configCls(Cls_config);
 	Ilp0100_updateCls(parm);
@@ -1224,7 +1287,7 @@ int YushanII_set_exp(void __user *argp){
 		pr_err("[CAM] copy from user error\n");
 		return -EFAULT;
 	}
-	
+	/*update long exposure*/
 	long_exp.AnalogGainCodeBlue = exp.AnalogGain_B;
 	long_exp.AnalogGainCodeGreen = exp.AnalogGain_G;
 	long_exp.AnalogGainCodeRed = exp.AnalogGain_R;
@@ -1235,7 +1298,7 @@ int YushanII_set_exp(void __user *argp){
 
 	Ilp0100_updateSensorParamsLong(long_exp);
 
-	
+	/*update short exposure*/
 	short_exp.AnalogGainCodeBlue = exp.AnalogGain_B;
 	short_exp.AnalogGainCodeGreen = exp.AnalogGain_G;
 	short_exp.AnalogGainCodeRed = exp.AnalogGain_R;
@@ -1248,10 +1311,11 @@ int YushanII_set_exp(void __user *argp){
 	return 0;
 }
 
+/* HTC_START Gary_Yang : Video HDR*/
 void YushanII_set_hdr_exp(uint16_t gain, uint16_t dig_gain, uint32_t long_line, uint32_t short_line){
 	Ilp0100_structFrameParams long_exp,short_exp;
 
-	
+	/*update long exposure*/
 	long_exp.AnalogGainCodeBlue = gain;
 	long_exp.AnalogGainCodeGreen = gain;
 	long_exp.AnalogGainCodeRed = gain;
@@ -1262,7 +1326,7 @@ void YushanII_set_hdr_exp(uint16_t gain, uint16_t dig_gain, uint32_t long_line, 
 
 	Ilp0100_updateSensorParamsLong(long_exp);
 
-	
+	/*update short exposure*/
 	short_exp.AnalogGainCodeBlue = gain;
 	short_exp.AnalogGainCodeGreen = gain;
 	short_exp.AnalogGainCodeRed = gain;
@@ -1273,7 +1337,16 @@ void YushanII_set_hdr_exp(uint16_t gain, uint16_t dig_gain, uint32_t long_line, 
 
 	Ilp0100_updateSensorParamsShortOrNormal(short_exp);
 
+	/*
+	pr_info("[CAM]%s short_line %d, long_line %d, gain %d, dig_gain %d",
+		__func__,
+		short_line,
+		long_line,
+		gain,
+		dig_gain);
+	*/
 }
+/* HTC_END*/
 
 int YushanII_set_hdr_merge_debug(void __user *argp){
 	struct yushanii_hdr_merge usr_hdr_merge;
@@ -1299,6 +1372,7 @@ int YushanII_set_hdr_merge(struct yushanii_hdr_merge hdr_merge){
 	return 0;
 }
 
+/* HTC_START steven hdr mode switch ioctl interface 20130110 */
 int YushanII_set_hdr_merge_mode(void __user *argp){
 	struct yushanii_hdr_merge_mode usr_hdr_merge_mode;
 	Ilp0100_structHdrMergeConfig merge_config;
@@ -1317,18 +1391,18 @@ int YushanII_set_hdr_merge_mode(void __user *argp){
 }
 
 void YushanII_set_tm_MergeGain(void){
-	uint32_t hist_Y1 = 0x0;
-	uint32_t hist_Y0 = 0x0;
-	uint32_t line_Y0 = 0x0;
-	uint32_t line_Y1 = 0x0;
+	uint32_t hist_Y1 = 0x0;/*0x0f5c*/
+	uint32_t hist_Y0 = 0x0;/*0x0f58*/
+	uint32_t line_Y0 = 0x0;/*0x0f70*/
+	uint32_t line_Y1 = 0x0;/*0x0f74*/
 	uint8_t check[4];
 	memset(check, 0x0, sizeof(check));
-	
-	hist_Y1 = 0x467ffc00;
-	hist_Y0 = 0x45c00000;
-	
-	line_Y0 = 0x467ffc00;
-	line_Y1 = 0x45c00000;
+	/*histogram max gain*/
+	hist_Y1 = 0x467ffc00;/*7.99*/
+	hist_Y0 = 0x45c00000;/*3.0*/
+	/*lone max gain*/
+	line_Y0 = 0x467ffc00;/*7.99*/
+	line_Y1 = 0x45c00000;/*3.0*/
 	Ilp0100_writeRegister(0x0f5c, (uint8_t *) &hist_Y1);
 	Ilp0100_writeRegister(0x0f58, (uint8_t *) &hist_Y0);
 
@@ -1337,18 +1411,18 @@ void YushanII_set_tm_MergeGain(void){
 }
 
 void YushanII_set_tm_LongOnlyGain(void){
-	uint32_t hist_Y1 = 0x0;
-	uint32_t hist_Y0 = 0x0;
-	uint32_t line_Y0 = 0x0;
-	uint32_t line_Y1 = 0x0;
+	uint32_t hist_Y1 = 0x0;/*0x0f5c*/
+	uint32_t hist_Y0 = 0x0;/*0x0f58*/
+	uint32_t line_Y0 = 0x0;/*0x0f70*/
+	uint32_t line_Y1 = 0x0;/*0x0f74*/
 	uint8_t check[4];
 	memset(check, 0x0, sizeof(check));
-	
-	hist_Y1 = 0x45c00000;
-	hist_Y0 = 0x45800000;
-	
-	line_Y0 = 0x45c00000;
-	line_Y1 = 0x45800000;
+	/*histogram max gain*/
+	hist_Y1 = 0x45c00000;/*3.0*/
+	hist_Y0 = 0x45800000;/*2.0*/
+	/*lone max gain*/
+	line_Y0 = 0x45c00000;/*3.0*/
+	line_Y1 = 0x45800000;/*2.0*/
 	Ilp0100_writeRegister(0x0f5c, (uint8_t *) &hist_Y1);
 	Ilp0100_writeRegister(0x0f58, (uint8_t *) &hist_Y0);
 
@@ -1378,19 +1452,20 @@ int YushanII_set_hdr_factor(void __user *argp){
 		}
 	pr_info("%s usr_HDRFactor:%d",__func__,usr_HDRFactor);
 
-	if(usr_HDRFactor > 1)
+	if(usr_HDRFactor > 1)/*100 merge*/
 		YushanII_set_tm_MergeGain();
-	else 
+	else /*<=1 long only*/
 		YushanII_set_tm_LongOnlyGain();
 
        Ilp0100_setHDRFactor(usr_HDRFactor);
        return 0;
 }
+/* HTC_END steven hdr mode switch ioctl interface 20130110 */
 
 void YushanII_config_glace(struct yushanii_glace_config glace_config){
 	Ilp0100_structGlaceConfig long_glace_config, short_glace_config;
 
-	
+	/*update long glace config*/
 	long_glace_config.Enable                        = glace_config.long_glace_config.Enable;
 	long_glace_config.RoiHStart                     = glace_config.long_glace_config.RoiHStart;
 	long_glace_config.RoiVStart                     = glace_config.long_glace_config.RoiVStart;
@@ -1404,7 +1479,7 @@ void YushanII_config_glace(struct yushanii_glace_config glace_config){
 
 	Ilp0100_configGlaceLong(long_glace_config);
 
-	
+	/*update short glace config*/
 	short_glace_config.Enable                        = glace_config.short_glace_config.Enable;
 	short_glace_config.RoiHStart                     = glace_config.short_glace_config.RoiHStart;
 	short_glace_config.RoiVStart                     = glace_config.short_glace_config.RoiVStart;
@@ -1439,7 +1514,7 @@ static long YushanII_fops_ioctl(struct file *filp, unsigned int cmd,
 	struct YushanII_ctrl *raw_dev = filp->private_data;
 	void __user *argp = (void __user *)arg;
 
-	
+	//pr_info("%s:%d cmd = %d\n", __func__, __LINE__, _IOC_NR(cmd));
 	mutex_lock(&raw_dev->raw_ioctl_lock);
 	switch (cmd) {
 	case YUSHANII_GET_INT:
@@ -1490,6 +1565,7 @@ static long YushanII_fops_ioctl(struct file *filp, unsigned int cmd,
 		if(rc < 0)
 			pr_info("%s:%d cmd = %d, rc =%d\n", __func__, __LINE__, _IOC_NR(cmd), rc);
 		break;
+/* HTC_START steven hdr mode switch ioctl interface 20130110 */
 	case YUSHANII_SET_HDR_MERGE_MODE:
 		rc = YushanII_set_hdr_merge_mode(argp);
 		if(rc < 0)
@@ -1497,6 +1573,12 @@ static long YushanII_fops_ioctl(struct file *filp, unsigned int cmd,
 		break;
 	case YUSHANII_SET_HDR_FACTOR:
 		rc = YushanII_set_hdr_factor(argp);
+		if(rc < 0)
+			pr_info("%s:%d cmd = %d, rc =%d\n", __func__, __LINE__, _IOC_NR(cmd), rc);
+		break;
+/* HTC_END steven hdr mode switch ioctl interface 20130110 */
+	case YUSHANII_SET_DEFCOR_LEVEL:
+		rc = YushanII_set_defcor_level(argp);
 		if(rc < 0)
 			pr_info("%s:%d cmd = %d, rc =%d\n", __func__, __LINE__, _IOC_NR(cmd), rc);
 		break;

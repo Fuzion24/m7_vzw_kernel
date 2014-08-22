@@ -40,14 +40,18 @@ static struct miscdevice portlist_misc = {
 	.name = "htc-portlist",
 };
 
+/*++SSD_RIL@20121008: check htc_port_list_init_success before call packet filter related function */
 static int htc_port_list_init_success = 0;
+/*--SSD_RIL*/
 
 static ssize_t htc_show(struct device *dev,  struct device_attribute *attr,  char *buf)
 {
 	char *s = buf;
 
+/*++SSD_RIL@20121008: check htc_port_list_init_success before call packet filter related function */
 	if ( htc_port_list_init_success == 0 )
 		return 0;
+/*--SSD_RIL*/
 
 	mutex_lock(&port_lock);
 	s += sprintf(s, "%d\n", packet_filter_flag);
@@ -55,14 +59,17 @@ static ssize_t htc_show(struct device *dev,  struct device_attribute *attr,  cha
 	return s - buf;
 }
 
+/* report tcp/ip port info to the user space by sysfs */
 static ssize_t htcport_show(struct device *dev,  struct device_attribute *attr,  char *buf)
 {
 	char *s = buf;
 	struct list_head *listptr;
 	struct p_list *entry;
 
+/*++SSD_RIL@20121008: check htc_port_list_init_success before call packet filter related function */
 	if ( htc_port_list_init_success == 0 )
 		return 0;
+/*--SSD_RIL*/
 
 	mutex_lock(&port_lock);
 	list_for_each(listptr, &curr_port_list.list) {
@@ -81,8 +88,10 @@ static ssize_t htc_store(struct device *dev, struct device_attribute *attr,  con
 {
 	int ret;
 
+/*++SSD_RIL@20121008: check htc_port_list_init_success before call packet filter related function */
 	if ( htc_port_list_init_success == 0 )
 		return 0;
+/*--SSD_RIL*/
 
 	mutex_lock(&port_lock);
 	if (!strncmp(buf, "0", strlen("0"))) {
@@ -107,8 +116,10 @@ static DEVICE_ATTR(port, 0664, htcport_show, NULL);
 
 static int port_list_enable(int enable)
 {
+/*++SSD_RIL@20121008: check htc_port_list_init_success before call packet filter related function */
 	if ( htc_port_list_init_success == 0 )
 		return 0;
+/*--SSD_RIL*/
 
 	if (enable) {
 		packet_filter_flag = 1;
@@ -126,8 +137,10 @@ static void update_port_list(void)
 	struct list_head *listptr;
 	struct p_list *entry;
 
+/*++SSD_RIL@20121008: check htc_port_list_init_success before call packet filter related function */
 	if ( htc_port_list_init_success == 0 )
 		return;
+/*--SSD_RIL*/
 
 	list_for_each(listptr, &curr_port_list.list) {
 		entry = list_entry(listptr, struct p_list, list);
@@ -153,8 +166,10 @@ static struct p_list *add_list(int no)
 	struct p_list *entry;
 	int get_list = 0;
 
+/*++SSD_RIL@20121008: check htc_port_list_init_success before call packet filter related function */
 	if ( htc_port_list_init_success == 0 )
 		return 0;
+/*--SSD_RIL*/
 
 	list_for_each(listptr, &curr_port_list.list) {
 		entry = list_entry(listptr, struct p_list, list);
@@ -181,8 +196,10 @@ static void remove_list(int no)
 	struct p_list *entry;
 	int get_list = 0;
 
+/*++SSD_RIL@20121008: check htc_port_list_init_success before call packet filter related function */
 	if ( htc_port_list_init_success == 0 )
 		return;
+/*--SSD_RIL*/
 
 	list_for_each(listptr, &curr_port_list.list) {
 		entry = list_entry(listptr, struct p_list, list);
@@ -204,8 +221,10 @@ int add_or_remove_port(struct sock *sk, int add_or_remove)
 	__be32 src = inet->inet_rcv_saddr;
 	__u16 srcp = ntohs(inet->inet_sport);
 
+/*++SSD_RIL@20121008: check htc_port_list_init_success before call packet filter related function */
 	if ( htc_port_list_init_success == 0 )
 		return 0;
+/*--SSD_RIL*/
 
 	wake_lock(&port_suspend_lock);
 
@@ -214,7 +233,7 @@ int add_or_remove_port(struct sock *sk, int add_or_remove)
 		return 0;
 	}
 
-	
+	/* if source IP != 127.0.0.1 */
 	if (src != 0x0100007F && srcp != 0) {
 		mutex_lock(&port_lock);
 		if (add_or_remove)
@@ -226,7 +245,7 @@ int add_or_remove_port(struct sock *sk, int add_or_remove)
 		kobject_uevent(&portlist_misc.this_device->kobj, KOBJ_CHANGE);
 
 		mutex_unlock(&port_lock);
-		
+		/* notify RIL that port info is updated. */
 	}
 	wake_unlock(&port_suspend_lock);
 	return 0;
@@ -235,8 +254,10 @@ EXPORT_SYMBOL(add_or_remove_port);
 
 int update_port_list_charging_state(int enable)
 {
+/*++SSD_RIL@20121008: check htc_port_list_init_success before call packet filter related function */
 	if ( htc_port_list_init_success == 0 )
 		return 0;
+/*--SSD_RIL*/
 
 	wake_lock(&port_suspend_lock);
 	if (!packet_filter_flag) {
@@ -269,7 +290,9 @@ static int __init port_list_init(void)
 	wake_lock_init(&port_suspend_lock, WAKE_LOCK_SUSPEND, "port_list");
 	mutex_init(&port_lock);
 
+/*++SSD_RIL@20121008: check htc_port_list_init_success before call packet filter related function */
 	htc_port_list_init_success = 0;
+/*--SSD_RIL*/
 
 	printk(KERN_INFO "[Port list] init()\n");
 
@@ -304,14 +327,16 @@ static int __init port_list_init(void)
 		goto err_device_create_file;
 	}
 
-	
+	/* add attr to export port info. */
 	ret = device_create_file(portlist_misc.this_device, &dev_attr_port);
 	if (ret < 0) {
 		printk(KERN_ERR "[Port list] devices_create_file failed!\n");
 		goto err_device_create_file;
 	}
 
+/*++SSD_RIL@20121008: check htc_port_list_init_success before call packet filter related function */
 	htc_port_list_init_success = 1;
+/*--SSD_RIL*/
 
 	return 0;
 
@@ -330,8 +355,10 @@ static void __exit port_list_exit(void) {
 	struct list_head *listptr;
 	struct p_list *entry;
 
+/*++SSD_RIL@20121008: check htc_port_list_init_success before call packet filter related function */
 	if ( htc_port_list_init_success == 0 )
 		return;
+/*--SSD_RIL*/
 
 	device_remove_file(portlist_misc.this_device, &dev_attr_flag);
 	device_remove_file(portlist_misc.this_device, &dev_attr_port);

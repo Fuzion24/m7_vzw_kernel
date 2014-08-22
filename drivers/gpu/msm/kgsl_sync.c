@@ -29,6 +29,10 @@ struct sync_pt *kgsl_sync_pt_create(struct sync_timeline *timeline,
 	return pt;
 }
 
+/*
+ * This should only be called on sync_pts which have been created but
+ * not added to a fence.
+ */
 void kgsl_sync_pt_destroy(struct sync_pt *pt)
 {
 	sync_pt_free(pt);
@@ -48,7 +52,7 @@ static int kgsl_sync_pt_has_signaled(struct sync_pt *pt)
 	unsigned int ts = kpt->timestamp;
 	unsigned int last_ts = ktimeline->last_timestamp;
 	if (timestamp_cmp(last_ts, ts) >= 0) {
-		
+		/* signaled */
 		return 1;
 	}
 	return 0;
@@ -82,6 +86,15 @@ struct kgsl_fence_event_priv {
 	unsigned int timestamp;
 };
 
+/**
+ * kgsl_fence_event_cb - Event callback for a fence timestamp event
+ * @device - The KGSL device that expired the timestamp
+ * @priv - private data for the event
+ * @context_id - the context id that goes with the timestamp
+ * @timestamp - the timestamp that triggered the event
+ *
+ * Signal a fence following the expiration of a timestamp
+ */
 
 static inline void kgsl_fence_event_cb(struct kgsl_device *device,
 	void *priv, u32 context_id, u32 timestamp)
@@ -92,6 +105,18 @@ static inline void kgsl_fence_event_cb(struct kgsl_device *device,
 	kfree(ev);
 }
 
+/**
+ * kgsl_add_fence_event - Create a new fence event
+ * @device - KGSL device to create the event on
+ * @timestamp - Timestamp to trigger the event
+ * @data - Return fence fd stored in struct kgsl_timestamp_event_fence
+ * @len - length of the fence event
+ * @owner - driver instance that owns this event
+ * @returns 0 on success or error code on error
+ *
+ * Create a fence and register an event to signal the fence when
+ * the timestamp expires
+ */
 
 int kgsl_add_fence_event(struct kgsl_device *device,
 	u32 context_id, u32 timestamp, void __user *data, int len,
@@ -127,7 +152,7 @@ int kgsl_add_fence_event(struct kgsl_device *device,
 
 	fence = sync_fence_create("kgsl-fence", pt);
 	if (fence == NULL) {
-		
+		/* only destroy pt when not added to fence */
 		kgsl_sync_pt_destroy(pt);
 		KGSL_DRV_ERR(device, "sync_fence_create failed\n");
 		ret = -ENOMEM;
@@ -156,11 +181,11 @@ int kgsl_add_fence_event(struct kgsl_device *device,
 
 fail_event:
 fail_copy_fd:
-	
+	/* clean up sync_fence_install */
 	sync_fence_put(fence);
 	put_unused_fd(priv.fence_fd);
 fail_fd:
-	
+	/* clean up sync_fence_create */
 	sync_fence_put(fence);
 fail_fence:
 fail_pt:

@@ -20,13 +20,16 @@
 #include <sound/pcm.h>
 #include <sound/soc.h>
 
+//htc audio ++
 #undef pr_info
 #undef pr_err
 #define pr_info(fmt, ...) pr_aud_info(fmt, ##__VA_ARGS__)
 #define pr_err(fmt, ...) pr_aud_err(fmt, ##__VA_ARGS__)
+//htc audio --
 
 static struct snd_soc_dai_ops msm_fe_dai_ops = {};
 
+/* Conventional and unconventional sample rate supported */
 static unsigned int supported_sample_rates[] = {
 	8000, 11025, 12000, 16000, 22050, 24000, 32000, 44100, 48000
 };
@@ -264,7 +267,7 @@ static struct snd_soc_dai_driver msm_fe_dais[] = {
 		.ops = &msm_fe_Multimedia_dai_ops,
 		.name = "MultiMedia8",
 	},
-	
+	/* FE DAIs created for hostless operation purpose */
 	{
 		.playback = {
 			.stream_name = "SLIMBUS0 Hostless Playback",
@@ -357,6 +360,7 @@ static struct snd_soc_dai_driver msm_fe_dais[] = {
 		.ops = &msm_fe_dai_ops,
 		.name = "HDMI_HOSTLESS"
 	},
+//HTC_AUD +++
 	{
 		.playback = {
 			.stream_name = "PRI_I2S_HOSTLESS Playback",
@@ -395,6 +399,7 @@ static struct snd_soc_dai_driver msm_fe_dais[] = {
 		.ops = &msm_fe_dai_ops,
 		.name = "MM_STUB",
 	},
+//HTC_AUD ---
 	{
 		.playback = {
 			.stream_name = "AUXPCM Hostless Playback",
@@ -618,5 +623,6 @@ static void __exit msm_fe_dai_exit(void)
 }
 module_exit(msm_fe_dai_exit);
 
+/* Module information */
 MODULE_DESCRIPTION("MSM Frontend DAI driver");
 MODULE_LICENSE("GPL v2");

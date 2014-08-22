@@ -76,6 +76,7 @@
 #define RIVA_PMU_CLK_ROOT3_SRC1_SEL		0xE000
 #define RIVA_PMU_CLK_ROOT3_SRC1_SEL_RIVA	(1 << 13)
 
+//HTC_WIFI_START Cooper++
 #define CLOCK_PLL_WARMUP_TIME_US         60
 #define LPASS_CSR_BASE                   0x28000000
 #define LCC_REG_BASE                     (LPASS_CSR_BASE      + 0x00000000)
@@ -108,11 +109,13 @@
 #define HWIO_RIVA_PLL_MODE_OUTM(m,v) \
         out_dword_masked_ns(HWIO_RIVA_PLL_MODE_ADDR,m,v,HWIO_RIVA_PLL_MODE_IN)
 
+/* Read hardware version */
 #define APQ8064_HW_VER_2_0   0x2
 #define HW_VER_ID_VIRT      (MSM_TLMM_BASE + 0x00002054)
 
 #define TRUE 1
 #define FALSE 0
+//HTC_WIFI_END Cooper--
 
 struct riva_data {
 	void __iomem *base;
@@ -122,13 +125,16 @@ struct riva_data {
 	struct pil_device *pil;
 };
 
+/*
+ * Enumeration for PLLs.
+ */
 enum
 {
-  CLOCK_SOURCE_XO,    
-  CLOCK_SOURCE_WCNXO, 
-  CLOCK_SOURCE_PLL4,  
-  CLOCK_SOURCE_PLL5,  
-  CLOCK_SOURCE_PLL13  
+  CLOCK_SOURCE_XO,    /**< XO source.              */
+  CLOCK_SOURCE_WCNXO, /**< IRIS XO source.         */
+  CLOCK_SOURCE_PLL4,  /**< LPASS PLL.              */
+  CLOCK_SOURCE_PLL5,  /**< Nav PLL.                */
+  CLOCK_SOURCE_PLL13  /**< RIVA PLL.               */
 };
 
 #ifdef CONFIG_QUALCOMM_WLAN_PXO
@@ -141,20 +147,35 @@ static bool Clock_WaitForPLLActive (u32 nPLL)
   {
     case CLOCK_SOURCE_PLL4:
       nRegAddr = HWIO_LCC_PLL0_STATUS_ADDR;
+      /*
+       * FSM mode - bit 16 of LCC_PLL0_STATUS register will be high
+       *            if clock is detected.
+       */
       nRegMask = HWIO_LCC_PLL0_STATUS_PLL_ACTIVE_FLAG_BMSK;
       break;
     case CLOCK_SOURCE_PLL5:
       nRegAddr = (u32)HWIO_PLL5_STATUS_ADDR;
+      /*
+       * Non-FSM mode - bit 0 of PLL5_STATUS register will be high
+       *                if clock is detected.
+       */
       nRegMask = HWIO_PLL5_STATUS_PLL_ACTIVE_FLAG_BMSK;
       break;
     case CLOCK_SOURCE_PLL13:
       nRegAddr = (u32)HWIO_RIVA_PLL_STATUS_ADDR;
+      /*
+       * Non-FSM mode - bit 0 of RIVA_PLL_STATUS register will be high
+       *                if clock is detected.
+       */
       nRegMask = 0x1;
       break;
     default:
       return FALSE;
   }
 
+  /*
+   * Check to see if PLL is activated
+   */
   while(nLoops > 0)
   {
     if(__inpdw(nRegAddr) & nRegMask)
@@ -168,7 +189,7 @@ static bool Clock_WaitForPLLActive (u32 nPLL)
 
   return FALSE;
 
-} 
+} /* END Clock_WaitForPLLActive */
 #endif
 
 static bool cxo_is_needed(struct riva_data *drv)
@@ -223,6 +244,7 @@ static int pil_riva_reset(struct pil_desc *pil)
 	void __iomem *base = drv->base;
 	unsigned long start_addr = drv->start_addr;
 	bool use_cxo = cxo_is_needed(drv);
+//HTC_WIFI_START
 #ifdef CONFIG_QUALCOMM_WLAN_PXO
 	u32 nLoopCount = 5;
 	u32 hw_ver_id;
@@ -230,13 +252,14 @@ static int pil_riva_reset(struct pil_desc *pil)
 
 	printk("[WLAN][SSR] Get hw_ver_id = %#x\n", hw_ver_id);
 #endif
+//HTC_WIFI_END
 
-	
+	/* Enable A2XB bridge */
 	reg = readl_relaxed(base + RIVA_PMU_A2XB_CFG);
 	reg |= RIVA_PMU_A2XB_CFG_EN;
 	writel_relaxed(reg, base + RIVA_PMU_A2XB_CFG);
 
-	
+	/* Program PLL 13 to 960 MHz */
 	reg = readl_relaxed(RIVA_PLL_MODE);
 	reg &= ~(PLL_MODE_BYPASSNL | PLL_MODE_OUTCTRL | PLL_MODE_RESET_N);
 	writel_relaxed(reg, RIVA_PLL_MODE);
@@ -254,10 +277,14 @@ static int pil_riva_reset(struct pil_desc *pil)
 	reg |= use_cxo ? PLL_MODE_REF_XO_SEL_CXO : PLL_MODE_REF_XO_SEL_RF;
 	writel_relaxed(reg, RIVA_PLL_MODE);
 
-	
+	/* Enable PLL 13 */
 	reg |= PLL_MODE_BYPASSNL;
 	writel_relaxed(reg, RIVA_PLL_MODE);
 
+	/*
+	 * H/W requires a 5us delay between disabling the bypass and
+	 * de-asserting the reset. Delay 10us just to be safe.
+	 */
 	mb();
 	usleep_range(10, 20);
 
@@ -266,15 +293,18 @@ static int pil_riva_reset(struct pil_desc *pil)
 	reg |= PLL_MODE_OUTCTRL;
 	writel_relaxed(reg, RIVA_PLL_MODE);
 
-	
+	/* Wait for PLL to settle */
 	mb();
 	usleep_range(50, 100);
 
-	
+	//HTC_WIFI_START Cooper++ Wait for PLL warm-up
 #ifdef CONFIG_QUALCOMM_WLAN_PXO
 	if (hw_ver_id >= APQ8064_HW_VER_2_0) {
 		printk("[WLAN][SSR] Wait for PLL warm-up\n");
-		while(nLoopCount > 0) 
+		/*
+		 * Wait for the PLL warm-up time
+		 */
+		while(nLoopCount > 0) //wait 60us for 5 counts, total: 300us
 		{
 			udelay(CLOCK_PLL_WARMUP_TIME_US);
 			if(in_dword_masked(HWIO_PLL_LOCK_DET_STATUS_ADDR, 0xffffffff) & (1 << 13))
@@ -282,6 +312,9 @@ static int pil_riva_reset(struct pil_desc *pil)
 			nLoopCount--;
 		}
 
+		/*
+		 * Check to see if PLL lock detection passed
+		 */
 		if(nLoopCount == 0)
 		{
 			printk("[WLAN][SSR] PLL lock detection failed!\n");
@@ -289,16 +322,22 @@ static int pil_riva_reset(struct pil_desc *pil)
 		}
 		printk("[WLAN][SSR] Check PLL lock detection passed\n");
 
-		HWIO_RIVA_PLL_MODE_OUTM(0x1, (u32)(1) << (0x0)); 
+		/*
+		 * Put the PLL in active mode
+		 */
+		HWIO_RIVA_PLL_MODE_OUTM(0x1, (u32)(1) << (0x0)); //RIVA_PLL_MODE_PLL_OUTCTRL=1
 
+		/*
+		 * Wait for clock detect before continuing
+		 */
 		if (Clock_WaitForPLLActive(CLOCK_SOURCE_PLL13) == FALSE)
 		{return -1;}
 		printk("[WLAN][SSR] Wait for PLL Active ...OK!\n");
 	}
 #endif
-	
+	//HTC_WIFI_END Cooper--
 
-	
+	/* Configure cCPU for 240 MHz */
 	sel = readl_relaxed(base + RIVA_PMU_ROOT_CLK_SEL);
 	reg = readl_relaxed(base + RIVA_PMU_CLK_ROOT3);
 	if (sel & RIVA_PMU_ROOT_CLK_SEL_3) {
@@ -319,36 +358,36 @@ static int pil_riva_reset(struct pil_desc *pil)
 	reg ^= RIVA_PMU_ROOT_CLK_SEL_3;
 	writel_relaxed(reg, base + RIVA_PMU_ROOT_CLK_SEL);
 
-	
+	/* Use the high vector table */
 	reg = readl_relaxed(base + RIVA_PMU_CCPU_CTL);
 	reg |= RIVA_PMU_CCPU_CTL_HIGH_IVT | RIVA_PMU_CCPU_CTL_REMAP_EN;
 	writel_relaxed(reg, base + RIVA_PMU_CCPU_CTL);
 
-	
+	/* Set base memory address */
 	writel_relaxed(start_addr >> 16, base + RIVA_PMU_CCPU_BOOT_REMAP_ADDR);
 
-	
+	/* Clear warmboot bit indicating this is a cold boot */
 	reg = readl_relaxed(base + RIVA_PMU_CFG);
 	reg &= ~(RIVA_PMU_CFG_WARM_BOOT);
 	writel_relaxed(reg, base + RIVA_PMU_CFG);
 
-	
+	/* Enable the cCPU clock */
 	reg = readl_relaxed(base + RIVA_PMU_OVRD_VAL);
 	reg |= RIVA_PMU_OVRD_VAL_CCPU_CLK;
 	writel_relaxed(reg, base + RIVA_PMU_OVRD_VAL);
 
-	
+	//HTC_WIFI_START Cooper++ Use PXO for RIVA
 #ifdef CONFIG_QUALCOMM_WLAN_PXO
 	if (hw_ver_id >= APQ8064_HW_VER_2_0) {
 		printk("[WLAN][SSR] Use PXO for RIVA\n");
-		HWIO_RIVA_RESET_OUTM((0x2),(u32)(1) << (0x1)); 
-		HWIO_RIVA_XO_SRC_CLK_CTL_OUTM((0x00000004), (u32)(1) << (0x2)); 
-		HWIO_RIVA_RESET_OUTM((0x2),(u32)(0) << (0x1)); 
+		HWIO_RIVA_RESET_OUTM((0x2),(u32)(1) << (0x1)); //RIVA_RESET_RIVA_XO_SWITCH_DISABLE=1
+		HWIO_RIVA_XO_SRC_CLK_CTL_OUTM((0x00000004), (u32)(1) << (0x2)); //RIVA_XO_SRC_CLK_CTL_RIVA_XO_SELECT = PXO
+		HWIO_RIVA_RESET_OUTM((0x2),(u32)(0) << (0x1)); //RIVA_RESET_RIVA_XO_SWITCH_DISABLE=0
 	}
 #endif
-	
+	//HTC_WIFI_END Cooper--
 
-	
+	/* Take cCPU out of reset */
 	reg |= RIVA_PMU_OVRD_VAL_CCPU_RESET;
 	writel_relaxed(reg, base + RIVA_PMU_OVRD_VAL);
 
@@ -360,7 +399,7 @@ static int pil_riva_shutdown(struct pil_desc *pil)
 	struct riva_data *drv = dev_get_drvdata(pil->dev);
 	u32 reg;
 
-	
+	/* Put cCPU and cCPU clock into reset */
 	reg = readl_relaxed(drv->base + RIVA_PMU_OVRD_VAL);
 	reg &= ~(RIVA_PMU_OVRD_VAL_CCPU_RESET | RIVA_PMU_OVRD_VAL_CCPU_CLK);
 	writel_relaxed(reg, drv->base + RIVA_PMU_OVRD_VAL);
@@ -369,12 +408,12 @@ static int pil_riva_shutdown(struct pil_desc *pil)
 	writel_relaxed(reg, drv->base + RIVA_PMU_OVRD_EN);
 	mb();
 
-	
+	/* Assert reset to Riva */
 	writel_relaxed(1, RIVA_RESET);
 	mb();
 	usleep_range(1000, 2000);
 
-	
+	/* Deassert reset to Riva */
 	writel_relaxed(0, RIVA_RESET);
 	mb();
 

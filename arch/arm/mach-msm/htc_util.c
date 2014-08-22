@@ -25,11 +25,12 @@
 #include <linux/gpio.h>
 #include <asm/system_info.h>
 #include <linux/tick.h>
-#include "htc_cpu_usage_stats.h"    
+#include "htc_cpu_usage_stats.h"    /* PWR2_ADD, @CPU sniffer: CPU usage statistics. */
 
 #include "board-monarudo.h"
 #define HTC_PM_STATSTIC_DELAY			10000
 
+/* PWR2_ADD_START, @CPU sniffer: CPU usage statistics. */
 #define USE_STATISTICS_STRATEGY_CONTINUOUS_3    0
 #define SEND_KOBJECT_UEVENT_ENV_ENABLED         0
 
@@ -40,20 +41,20 @@
 #define BUFFER_TEMP_LEN                         32
 #if USE_STATISTICS_STRATEGY_CONTINUOUS_3
 #define MAX_CONSECUTIVE_THRES_TIMES             3
-#else 
+#else /* <Not> USE_STATISTICS_STRATEGY_CONTINUOUS_3 */
 #define MAX_OVER_THRES_TIMES                    5
 #define HTC_KERNEL_TOP_MONITOR_PERIOD           10
 #define MAX_PROCESS_MONITOR_ARRAY_FIELDS        (HTC_KERNEL_TOP_MONITOR_PERIOD * NUM_BUSY_THREAD_CHECK)
 #define PROCESS_MONITOR_ARRAY_5_IN_10_SIZE      MAX_PROCESS_MONITOR_ARRAY_FIELDS
 #define BUFFER_WARN_5_IN_10_SIZE                HTC_KERNEL_TOP_MONITOR_PERIOD
-#endif 
+#endif /* USE_STATISTICS_STRATEGY_CONTINUOUS_3 */
 
 #if USE_STATISTICS_STRATEGY_CONTINUOUS_3
 struct current_pid_found {
     unsigned char pid_found;
     unsigned char need_to_add;
 };
-#endif 
+#endif /* USE_STATISTICS_STRATEGY_CONTINUOUS_3 */
 
 struct process_monitor_statistic {
     unsigned int pid;
@@ -63,22 +64,23 @@ struct process_monitor_statistic {
     unsigned char is_found;
 #if SEND_KOBJECT_UEVENT_ENV_ENABLED
     unsigned char sent_uevent;
-#endif 
+#endif /*SEND_KOBJECT_UEVENT_ENV_ENABLED */
 };
 
-int pm_monitor_enabled = 0; 
+int pm_monitor_enabled = 0; /* extern in htc_util.h */
 
 #if USE_STATISTICS_STRATEGY_CONTINUOUS_3
 static struct current_pid_found current_pid_found_array[NUM_BUSY_THREAD_CHECK];
 static struct process_monitor_statistic process_monitor_continuous_3_array[NUM_BUSY_THREAD_CHECK];
 #define SIZE_OF_CURR_PID_FOUND_ARRAY                    ARRAY_SIZE(current_pid_found_array)
 #define SIZE_OF_PROCESS_MONITOR_CONTINUOUS_3_ARRAY      ARRAY_SIZE(process_monitor_continuous_3_array)
-#else 
+#else /* <Not> USE_STATISTICS_STRATEGY_CONTINUOUS_3 */
 static int statistic_monitor_period = 1;
 
 static struct process_monitor_statistic process_monitor_5_in_10_array[PROCESS_MONITOR_ARRAY_5_IN_10_SIZE];
 #define SIZE_OF_PROCESS_MONITOR_5_IN_10_ARRAY           ARRAY_SIZE(process_monitor_5_in_10_array)
-#endif 
+#endif /* USE_STATISTICS_STRATEGY_CONTINUOUS_3 */
+/* PWR2_ADD_END, @CPU sniffer: CPU usage statistics. */
 
 #ifdef arch_idle_time
 
@@ -109,7 +111,7 @@ static u64 get_idle_time(int cpu)
 	u64 idle, idle_time = get_cpu_idle_time_us(cpu, NULL);
 
 	if (idle_time == -1ULL)
-		
+		/* !NO_HZ so we can rely on cpustat.idle */
 		idle = kcpustat_cpu(cpu).cpustat[CPUTIME_IDLE];
 	else
 		idle = usecs_to_cputime64(idle_time);
@@ -122,7 +124,7 @@ static u64 get_iowait_time(int cpu)
 	u64 iowait, iowait_time = get_cpu_iowait_time_us(cpu, NULL);
 
 	if (iowait_time == -1ULL)
-		
+		/* !NO_HZ so we can rely on cpustat.iowait */
 		iowait = kcpustat_cpu(cpu).cpustat[CPUTIME_IOWAIT];
 	else
 		iowait = usecs_to_cputime64(iowait_time);
@@ -143,25 +145,29 @@ module_param_named(
 	delay_time, msm_htc_util_delay_time, int, S_IRUGO | S_IWUSR | S_IWGRP
 );
 
-static int msm_htc_util_top_delay_time = HTC_KERNEL_TOP_DELAY;  
+static int msm_htc_util_top_delay_time = HTC_KERNEL_TOP_DELAY;  /* PWR2_ADD, @CPU sniffer: CPU usage statistics. */
 
 static struct workqueue_struct *htc_pm_monitor_wq = NULL;
 struct delayed_work htc_pm_delayed_work;
 
 static spinlock_t lock;
 
+/* PWR2_ADD_START, @CPU sniffer: CPU usage statistics. */
 static struct workqueue_struct *htc_kernel_top_monitor_wq = NULL;
 struct delayed_work htc_kernel_top_delayed_work;
 
 static spinlock_t lock_accu;
+/* PWR2_ADD_END, @CPU sniffer: CPU usage statistics. */
 
 void htc_xo_vddmin_stat_show(void);
 void htc_kernel_top(void);
+/* PWR2_ADD_START, @CPU sniffer: CPU usage statistics. */
 #if USE_STATISTICS_STRATEGY_CONTINUOUS_3
 void clear_current_pid_found_array(void);
-#endif 
+#endif /* USE_STATISTICS_STRATEGY_CONTINUOUS_3 */
 void clear_process_monitor_array(struct process_monitor_statistic *pArray, int array_size);
 void htc_kernel_top_accumulation(void);
+/* PWR2_ADD_END, @CPU sniffer: CPU usage statistics. */
 
 uint32_t previous_xo_count = 0;
 uint64_t previous_xo_time = 0;
@@ -224,6 +230,7 @@ void htc_idle_stat_show(u32 total_time)
 	msm_rpm_dump_stat();
 }
 
+/* Temp mark it*/
 #if 0
 static DECLARE_BITMAP(msm_pm_clocks_no_tcxo_shutdown, MAX_NR_CLKS);
 #endif
@@ -234,6 +241,7 @@ void htc_xo_block_clks_count_clear(void)
 }
 void htc_xo_block_clks_count(void)
 {
+/* Temp mark it*/
 #if 0
 	int ret, i;
 	ret = msm_clock_require_tcxo(msm_pm_clocks_no_tcxo_shutdown, MAX_NR_CLKS);
@@ -250,6 +258,7 @@ void htc_xo_block_clks_count(void)
 
 void htc_xo_block_clks_count_show(void)
 {
+/* Temp mark it*/
 #if 0
 	int ret, i;
 	ret = msm_clock_require_tcxo(msm_pm_clocks_no_tcxo_shutdown, MAX_NR_CLKS);
@@ -286,6 +295,9 @@ void htc_xo_vddmin_stat_show(void)
 	}
 }
 
+/*
+ * Qct does not implement under RPM.
+ */
 void htc_print_vddmin_gpio_status(void)
 {
 	if (system_rev == XB || system_rev == XC)
@@ -314,13 +326,13 @@ void htc_pm_monitor_work(struct work_struct *work)
 	htc_idle_stat_show(msm_htc_util_delay_time);
 	htc_idle_stat_clear();
 	htc_timer_stats_onoff('0');
-	htc_timer_stats_show(300);
+	htc_timer_stats_show(300);/*Show timer events which greater than 300 every 10 sec*/
 	htc_timer_stats_onoff('1');
 #ifdef CONFIG_PERFLOCK
 	htc_print_active_perf_locks();
 #endif
-	
-	
+	/* Kernel 3.4 removes WAKE_LOCK_IDLE */
+	/* htc_print_active_wake_locks(WAKE_LOCK_IDLE); */
 	htc_print_active_wake_locks(WAKE_LOCK_SUSPEND);
 	htc_print_vddmin_gpio_status();
 
@@ -329,6 +341,7 @@ void htc_pm_monitor_work(struct work_struct *work)
 	printk("[K] [PM] hTC PM Statistic done\n");
 }
 
+/* PWR2_ADD_START, @CPU sniffer: CPU usage statistics. */
 void htc_kernel_top_accumulation_monitor_work(struct work_struct *work)
 {
 	struct timespec ts;
@@ -355,22 +368,26 @@ void htc_kernel_top_accumulation_monitor_work(struct work_struct *work)
 	htc_kernel_top_accumulation();
 	if (pm_monitor_enabled)
 		printk("[K] [KTOP] hTC Kernel Top Statistic done\n");
-} 
+} /* htc_kernel_top_accumulation_monitor_work() */
+/* PWR2_ADD_END, @CPU sniffer: CPU usage statistics. */
 
 static u32 full_loading_counter = 0;
 
 #define MAX_PID 32768
- 
+/*#define NUM_BUSY_THREAD_CHECK 5*/ /* PWR2_MARK, @CPU sniffer: CPU usage statistics. Move to front of this file. */
+/* Previous process state */
 unsigned int *prev_proc_stat = NULL;
 int *curr_proc_delta = NULL;
-int *curr_proc_pid = NULL;  
+int *curr_proc_pid = NULL;  /* PWR2_ADD, @CPU sniffer: CPU usage statistics. */
 struct task_struct **task_ptr_array = NULL;
 struct kernel_cpustat new_cpu_stat, old_cpu_stat;
+/* PWR2_ADD_START, @CPU sniffer: CPU usage statistics. */
 unsigned int *prev_proc_stat_accu = NULL;
 int *curr_proc_delta_accu = NULL;
 int *curr_proc_pid_accu = NULL;
 struct task_struct **task_ptr_array_accu = NULL;
 struct kernel_cpustat new_cpu_stat_accu, old_cpu_stat_accu;
+/* PWR2_ADD_END, @CPU sniffer: CPU usage statistics. */
 
 int findBiggestInRange(int *array, int max_limit_idx)
 {
@@ -384,6 +401,7 @@ int findBiggestInRange(int *array, int max_limit_idx)
 	return largest_idx;
 }
 
+/* sorting from large to small */
 void sorting(int *source, int *output)
 {
 	int i;
@@ -395,6 +413,7 @@ void sorting(int *source, int *output)
 	}
 }
 
+/* PWR2_ADD_START, @CPU sniffer: CPU usage statistics. */
 void sorting_pid(int *source, int *pid_pos, int pid_cnt, int *output)
 {
     int i=0, j=0, k=0, l=0;
@@ -405,7 +424,7 @@ void sorting_pid(int *source, int *pid_pos, int pid_cnt, int *output)
         if (i == 0) {
             for (j = 0; j < pid_cnt; j++) {
                 k = pid_pos[j];
-                
+                /* Find the largest one. */
                 if(source[output[i]] < source[k]) {
                     output[i] = k;
                 }
@@ -414,29 +433,31 @@ void sorting_pid(int *source, int *pid_pos, int pid_cnt, int *output)
         else {
             for (j = 0; j < pid_cnt; j++) {
                 k = pid_pos[j];
-                
+                /* Skip the saved PIDs. */
                 for (l = 0; l < i; l++) {
-                    
+                    /* Field (index k) is saved already. */
                     if (output[l] == k) {
                         pid_found = 1;
                         break;
                     }
                 }
-                
+                /* Found the saved PID and skip it (index k). */
                 if (pid_found) {
                     pid_found = 0;
                     continue;
                 }
 
-                
+                /* Find the largest one from rest fields. */
                 if(source[output[i]] < source[k]) {
                     output[i] = k;
                 }
             }
         }
     }
-} 
+} /* sorting_pid() */
+/* PWR2_ADD_END, @CPU sniffer: CPU usage statistics. */
 
+/* Sync fs/proc/stat.c to caculate all cpu statistics */
 static void get_all_cpu_stat(struct kernel_cpustat *cpu_stat)
 {
 	int i;
@@ -459,6 +480,7 @@ static void get_all_cpu_stat(struct kernel_cpustat *cpu_stat)
 	}
 }
 
+/* PWR2_ADD_START, @CPU sniffer: CPU usage statistics. */
 void clear_process_monitor_array(struct process_monitor_statistic *pArray, int array_size)
 {
     int j;
@@ -472,9 +494,9 @@ void clear_process_monitor_array(struct process_monitor_statistic *pArray, int a
         (pArray + j)->is_found = 0;
 #if SEND_KOBJECT_UEVENT_ENV_ENABLED
         (pArray + j)->sent_uevent = 0;
-#endif 
+#endif /* SEND_KOBJECT_UEVENT_ENV_ENABLED */
     }
-} 
+} /* clear_process_monitor_array() */
 
 #if USE_STATISTICS_STRATEGY_CONTINUOUS_3
 void clear_current_pid_found_array(void)
@@ -486,7 +508,7 @@ void clear_current_pid_found_array(void)
         current_pid_found_array[i].pid_found = 0;
         current_pid_found_array[i].need_to_add = 0;
     }
-} 
+} /* clear_current_pid_found_array() */
 
 int htc_kernel_top_statistics_continuous_3(unsigned long delta_time, int *ptr_top_loading)
 {
@@ -496,24 +518,24 @@ int htc_kernel_top_statistics_continuous_3(unsigned long delta_time, int *ptr_to
     int ok_to_send_uevent = 0;
     char buf_warn[SIZE_OF_PROCESS_MONITOR_CONTINUOUS_3_ARRAY * BUFFER_WARN_LEN];
     char buf_temp[BUFFER_TEMP_LEN];
-#endif 
+#endif /* SEND_KOBJECT_UEVENT_ENV_ENABLED */
 
     for (i = 0 ; i < SIZE_OF_CURR_PID_FOUND_ARRAY ; i++)
     {
         cpu_usage = curr_proc_delta_accu[*(ptr_top_loading + i)] * 100 / delta_time;
-        
+        /* Reach the threshold */
         if (cpu_usage >= HTC_KERNEL_TOP_CPU_USAGE_THRESHOLD)
         {
-            
+            /* Search in the array to check if we got any PID match. */
             for (j = 0; j < SIZE_OF_PROCESS_MONITOR_CONTINUOUS_3_ARRAY; j++)
             {
-                
+                /* Mate with the PID records. */
                 if (process_monitor_continuous_3_array[j].pid == *(ptr_top_loading + i))
                 {
-                    
+                    /* Found the PID record. */
                     process_monitor_continuous_3_array[j].cnt++;
                     process_monitor_continuous_3_array[j].is_found = 1;
-                    
+                    /* Mark the PID was found. */
                     current_pid_found_array[i].pid_found = 1;
                     if ((process_monitor_continuous_3_array[j].cnt >= MAX_CONSECUTIVE_THRES_TIMES) && (!process_monitor_continuous_3_array[j].set_warn))
                     {
@@ -532,7 +554,7 @@ int htc_kernel_top_statistics_continuous_3(unsigned long delta_time, int *ptr_to
     }
 
 #if SEND_KOBJECT_UEVENT_ENV_ENABLED
-    
+    /* Pack buffer for sending out kobject_uevent. */
     memset(buf_warn, 0x0, sizeof(buf_warn));
     strcpy(buf_warn, "");
     for (j = 0; j < SIZE_OF_PROCESS_MONITOR_CONTINUOUS_3_ARRAY; j++)
@@ -548,38 +570,38 @@ int htc_kernel_top_statistics_continuous_3(unsigned long delta_time, int *ptr_to
         }
     }
 
-    
+    /* Need to send notification by kobject_uevent_env(). */
     if (ok_to_send_uevent)
     {
-        
+        /* End string. */
         strcat(buf_warn, "PID=0,0,0,0;");
         strcat(buf_warn, "#");
         send_cpu_usage_stats_kobject_uevent(&buf_warn[0]);
     }
-#endif 
+#endif /* SEND_KOBJECT_UEVENT_ENV_ENABLED */
 
-    
+    /* Kick out the non-consecutive PID record. */
     for (j = 0; j < SIZE_OF_PROCESS_MONITOR_CONTINUOUS_3_ARRAY; j++)
     {
         if (!process_monitor_continuous_3_array[j].is_found)
         {
-            
+            /* Clear the record. */
             process_monitor_continuous_3_array[j].pid = 0;
             process_monitor_continuous_3_array[j].ppid_name = NULL;
             process_monitor_continuous_3_array[j].cnt = 0;
             process_monitor_continuous_3_array[j].set_warn = 0;
 #if SEND_KOBJECT_UEVENT_ENV_ENABLED
             process_monitor_continuous_3_array[j].sent_uevent = 0;
-#endif 
+#endif /* SEND_KOBJECT_UEVENT_ENV_ENABLED */
         }
-        
+        /* Clear the found flag of this round. */
         process_monitor_continuous_3_array[j].is_found = 0;
     }
 
-    
+    /* Add new record. */
     for (i = 0 ; i < SIZE_OF_CURR_PID_FOUND_ARRAY ; i++)
     {
-        
+        /* Store the newer to add into process monitor array. */
         for (j = 0; j < SIZE_OF_PROCESS_MONITOR_CONTINUOUS_3_ARRAY; j++)
         {
             if (current_pid_found_array[i].need_to_add && !process_monitor_continuous_3_array[j].pid)
@@ -595,8 +617,8 @@ int htc_kernel_top_statistics_continuous_3(unsigned long delta_time, int *ptr_to
     clear_current_pid_found_array();
 
     return rtn;
-} 
-#else 
+} /* htc_kernel_top_statistics_continuous_3() */
+#else /* <Not> USE_STATISTICS_STRATEGY_CONTINUOUS_3 */
 
 int htc_kernel_top_statistics_5_in_10(unsigned long delta_time, int *ptr_top_loading)
 {
@@ -606,21 +628,21 @@ int htc_kernel_top_statistics_5_in_10(unsigned long delta_time, int *ptr_top_loa
     int ok_to_send_uevent = 0;
     char buf_warn[BUFFER_WARN_5_IN_10_SIZE * BUFFER_WARN_LEN];
     char buf_temp[BUFFER_TEMP_LEN];
-#endif 
+#endif /* SEND_KOBJECT_UEVENT_ENV_ENABLED */
 
     for (i = 0 ; i < NUM_BUSY_THREAD_CHECK ; i++)
     {
         cpu_usage = curr_proc_delta_accu[*(ptr_top_loading + i)] * 100 / delta_time;
-        
+        /* Reach the threshold */
         if (cpu_usage >= HTC_KERNEL_TOP_CPU_USAGE_THRESHOLD)
         {
-            
+            /* Search in the array to check if we got any PID match. */
             for (j = 0; j < SIZE_OF_PROCESS_MONITOR_5_IN_10_ARRAY; j++)
             {
-                
+                /* Mate with the PID records. */
                 if (process_monitor_5_in_10_array[j].pid == *(ptr_top_loading + i))
                 {
-                    
+                    /* Found the PID record. */
                     process_monitor_5_in_10_array[j].cnt++;
                     if ((process_monitor_5_in_10_array[j].cnt >= MAX_OVER_THRES_TIMES) && (process_monitor_5_in_10_array[j].set_warn == 0))
                     {
@@ -629,7 +651,7 @@ int htc_kernel_top_statistics_5_in_10(unsigned long delta_time, int *ptr_top_loa
                     }
                     break;
                 }
-                
+                /* Add as the new PID record. */
                 else if (process_monitor_5_in_10_array[j].pid == 0)
                 {
                     process_monitor_5_in_10_array[j].pid = *(ptr_top_loading + i);
@@ -642,17 +664,17 @@ int htc_kernel_top_statistics_5_in_10(unsigned long delta_time, int *ptr_top_loa
 
     if (statistic_monitor_period < HTC_KERNEL_TOP_MONITOR_PERIOD)
     {
-        
+        /* 1 ~ 9 */
         statistic_monitor_period++;
     }
     else
     {
-        
+        /* 10 -> 1 */
 #if SEND_KOBJECT_UEVENT_ENV_ENABLED
-        
+        /* Pack buffer for sending out kobject_uevent. */
         memset(buf_warn, 0x0, sizeof(buf_warn));
         strcpy(buf_warn, "");
-#endif 
+#endif /* SEND_KOBJECT_UEVENT_ENV_ENABLED */
         for (j = 0; j < SIZE_OF_PROCESS_MONITOR_5_IN_10_ARRAY; j++)
         {
             if (process_monitor_5_in_10_array[j].set_warn == 1)
@@ -662,27 +684,27 @@ int htc_kernel_top_statistics_5_in_10(unsigned long delta_time, int *ptr_top_loa
                 sprintf(buf_temp, "%d", process_monitor_5_in_10_array[j].pid);
                 strcat(buf_warn, buf_temp);
                 strcat(buf_warn, ",0,0,0;");
-#endif 
+#endif /* SEND_KOBJECT_UEVENT_ENV_ENABLED */
                 printk(KERN_ERR "[K] CPU_Sniffer: PID=[%d], name=[%s], over-cpu-usage-threshold.\n", 
                     process_monitor_5_in_10_array[j].pid, process_monitor_5_in_10_array[j].ppid_name);
 #if SEND_KOBJECT_UEVENT_ENV_ENABLED
                 process_monitor_5_in_10_array[j].sent_uevent = 1;
                 ok_to_send_uevent++;
-#endif 
+#endif /* SEND_KOBJECT_UEVENT_ENV_ENABLED */
                 rtn = 1;
             }
         }
 
 #if SEND_KOBJECT_UEVENT_ENV_ENABLED
-        
+        /* Need to send notification by kobject_uevent_env(). */
         if (ok_to_send_uevent)
         {
-            
+            /* End string. */
             strcat(buf_warn, "PID=0,0,0,0;");
             strcat(buf_warn, "#");
             send_cpu_usage_stats_kobject_uevent(&buf_warn[0]);
         }
-#endif 
+#endif /* SEND_KOBJECT_UEVENT_ENV_ENABLED */
 
         if (pm_monitor_enabled)
             printk("[K] [KTOP] Reach the number of statistics monitor period.\n");
@@ -691,8 +713,9 @@ int htc_kernel_top_statistics_5_in_10(unsigned long delta_time, int *ptr_top_loa
     }
 
     return rtn;
-} 
-#endif 
+} /* htc_kernel_top_statistics_5_in_10() */
+#endif /* USE_STATISTICS_STRATEGY_CONTINUOUS_3 */
+/* PWR2_ADD_END, @CPU sniffer: CPU usage statistics. */
 
 void htc_kernel_top(void)
 {
@@ -703,21 +726,21 @@ void htc_kernel_top(void)
 	ulong flags;
 	struct task_cputime cputime;
 	int dump_top_stack = 0;
-	int pid_cnt = 0;    
+	int pid_cnt = 0;    /* PWR2_ADD, @CPU sniffer: CPU usage statistics. */
 #ifdef CONFIG_DEBUG_KSWAPD
 	struct task_struct *kswapd_t = NULL;
 #endif
 
 	if (task_ptr_array == NULL ||
 			curr_proc_delta == NULL ||
-			curr_proc_pid == NULL ||    
+			curr_proc_pid == NULL ||    /* PWR2_ADD, @CPU sniffer: CPU usage statistics. */
 			prev_proc_stat == NULL)
 		return;
 
 	spin_lock_irqsave(&lock, flags);
 	get_all_cpu_stat(&new_cpu_stat);
 
-	
+	/* calculate the cpu time of each process */
 	for_each_process(p) {
 		thread_group_cputime(p, &cputime);
 
@@ -726,22 +749,22 @@ void htc_kernel_top(void)
 				(cputime.utime + cputime.stime)
 				- (prev_proc_stat[p->pid]);
 			task_ptr_array[p->pid] = p;
-			
+			/* PWR2_ADD_START, @CPU sniffer: CPU usage statistics. */
 			if (curr_proc_delta[p->pid] > 0) {
 				curr_proc_pid[pid_cnt] = p->pid;
 				pid_cnt++;
 			}
-			
+			/* PWR2_ADD_END, @CPU sniffer: CPU usage statistics. */
 		}
 	}
 
-	
-	
-	
+	/* sorting to get the top cpu consumers */
+	/* PWR2_MOD_START, @CPU sniffer: CPU usage statistics. */
+	/* sorting(curr_proc_delta, top_loading); */
 	sorting_pid(curr_proc_delta, curr_proc_pid, pid_cnt, top_loading);
-	
+	/* PWR2_MOD_END, @CPU sniffer: CPU usage statistics. */
 
-	
+	/* calculate the total delta time */
 	user_time = (unsigned long)((new_cpu_stat.cpustat[CPUTIME_USER] + new_cpu_stat.cpustat[CPUTIME_NICE])
 			- (old_cpu_stat.cpustat[CPUTIME_USER] + old_cpu_stat.cpustat[CPUTIME_NICE]));
 	system_time = (unsigned long)(new_cpu_stat.cpustat[CPUTIME_SYSTEM] - old_cpu_stat.cpustat[CPUTIME_SYSTEM]);
@@ -753,10 +776,14 @@ void htc_kernel_top(void)
 	 - (old_cpu_stat.cpustat[CPUTIME_IDLE] + old_cpu_stat.cpustat[CPUTIME_STEAL] + old_cpu_stat.cpustat[CPUTIME_GUEST]));
 	delta_time = user_time + system_time + io_time + irq_time + idle_time;
 
+	/*
+	 * Check if we need to dump the call stack of top CPU consumers
+	 * If CPU usage keeps 100% for 90 secs
+	 */
 	if ((full_loading_counter >= 9) && (full_loading_counter % 3 == 0))
 		 dump_top_stack = 1;
 
-	
+	/* print most time consuming processes */
 	printk("[K] CPU Usage\t\tPID\t\tName\n");
 	for (i = 0 ; i < NUM_BUSY_THREAD_CHECK ; i++) {
 		printk("[K] %8lu%%\t\t%d\t\t%s\t\t%d\n",
@@ -778,13 +805,13 @@ void htc_kernel_top(void)
 	}
 #endif
 
-	
+	/* check if dump busy thread stack */
 	if (dump_top_stack) {
 	   struct task_struct *t;
 	   for (i = 0 ; i < NUM_BUSY_THREAD_CHECK ; i++) {
 		if (task_ptr_array[top_loading[i]] != NULL && task_ptr_array[top_loading[i]]->stime > 0) {
 			t = task_ptr_array[top_loading[i]];
-			
+			/* dump all the thread stack of this process */
 			do {
 				printk("\n[K] ###pid:%d name:%s state:%lu ppid:%d stime:%lu utime:%lu\n",
 				t->pid, t->comm, t->state, t->real_parent->pid, t->stime, t->utime);
@@ -794,7 +821,7 @@ void htc_kernel_top(void)
 		}
 	   }
 	}
-	
+	/* save old values */
 	for_each_process(p) {
 		if (p->pid < MAX_PID) {
 			thread_group_cputime(p, &cputime);
@@ -808,9 +835,10 @@ void htc_kernel_top(void)
 
 	memset(curr_proc_delta, 0, sizeof(int) * MAX_PID);
 	memset(task_ptr_array, 0, sizeof(int) * MAX_PID);
-	memset(curr_proc_pid, 0, sizeof(int) * MAX_PID);    
+	memset(curr_proc_pid, 0, sizeof(int) * MAX_PID);    /* PWR2_ADD, @CPU sniffer: CPU usage statistics. */
 }
 
+/* PWR2_ADD_START, @CPU sniffer: CPU usage statistics. */
 void htc_kernel_top_accumulation(void)
 {
 	struct task_struct *p;
@@ -831,7 +859,7 @@ void htc_kernel_top_accumulation(void)
 	spin_lock_irqsave(&lock_accu, flags);
 	get_all_cpu_stat(&new_cpu_stat_accu);
 
-	
+	/* calculate the cpu time of each process */
 	for_each_process(p) {
 		thread_group_cputime(p, &cputime);
 
@@ -847,11 +875,11 @@ void htc_kernel_top_accumulation(void)
 		}
 	}
 
-	
-	
+	/* sorting to get the top cpu consumers */
+	/* sorting(curr_proc_delta_accu, top_loading_accu); */
 	sorting_pid(curr_proc_delta_accu, curr_proc_pid_accu, pid_cnt, top_loading_accu);
 
-	
+	/* calculate the total delta time */
 	user_time = (unsigned long)((new_cpu_stat_accu.cpustat[CPUTIME_USER] + new_cpu_stat_accu.cpustat[CPUTIME_NICE])
 			- (old_cpu_stat_accu.cpustat[CPUTIME_USER] + old_cpu_stat_accu.cpustat[CPUTIME_NICE]));
 	system_time = (unsigned long)(new_cpu_stat_accu.cpustat[CPUTIME_SYSTEM] - old_cpu_stat_accu.cpustat[CPUTIME_SYSTEM]);
@@ -863,10 +891,14 @@ void htc_kernel_top_accumulation(void)
 	 - (old_cpu_stat_accu.cpustat[CPUTIME_IDLE] + old_cpu_stat_accu.cpustat[CPUTIME_STEAL] + old_cpu_stat_accu.cpustat[CPUTIME_GUEST]));
 	delta_time = user_time + system_time + io_time + irq_time + idle_time;
 
+	/*
+	 * Check if we need to dump the call stack of top CPU consumers
+	 * If CPU usage keeps 100% for 90 secs
+	 */
 	if ((full_loading_counter >= 9) && (full_loading_counter % 3 == 0))
 		 dump_top_stack = 1;
 
-	
+	/* print most time consuming processes */
 	if (pm_monitor_enabled) {
 		printk("[K] [KTOP] CPU Usage\t\tPID\t\tName\n");
 		for (i = 0 ; i < NUM_BUSY_THREAD_CHECK ; i++) {
@@ -880,17 +912,17 @@ void htc_kernel_top_accumulation(void)
 
 #if USE_STATISTICS_STRATEGY_CONTINUOUS_3
 	htc_kernel_top_statistics_continuous_3(delta_time, &top_loading_accu[0]);
-#else 
+#else /* <Not> USE_STATISTICS_STRATEGY_CONTINUOUS_3 */
 	htc_kernel_top_statistics_5_in_10(delta_time, &top_loading_accu[0]);
-#endif 
+#endif /* USE_STATISTICS_STRATEGY_CONTINUOUS_3 */
 
-	
+	/* check if dump busy thread stack */
 	if (dump_top_stack) {
 	   struct task_struct *t;
 	   for (i = 0 ; i < NUM_BUSY_THREAD_CHECK ; i++) {
 		if (task_ptr_array_accu[top_loading_accu[i]] != NULL && task_ptr_array_accu[top_loading_accu[i]]->stime > 0) {
 			t = task_ptr_array_accu[top_loading_accu[i]];
-			
+			/* dump all the thread stack of this process */
 			do {
 				if (pm_monitor_enabled)
 					printk("\n[K] [KTOP] ###pid:%d name:%s state:%lu ppid:%d stime:%lu utime:%lu\n",
@@ -901,7 +933,7 @@ void htc_kernel_top_accumulation(void)
 		}
 	   }
 	}
-	
+	/* save old values */
 	for_each_process(p) {
 		if (p->pid < MAX_PID) {
 			thread_group_cputime(p, &cputime);
@@ -916,7 +948,8 @@ void htc_kernel_top_accumulation(void)
 	memset(curr_proc_delta_accu, 0, sizeof(int) * MAX_PID);
 	memset(task_ptr_array_accu, 0, sizeof(int) * MAX_PID);
 	memset(curr_proc_pid_accu, 0, sizeof(int) * MAX_PID);
-} 
+} /* htc_kernel_top_accumulation() */
+/* PWR2_ADD_END, @CPU sniffer: CPU usage statistics. */
 
 void htc_pm_monitor_init(void)
 {
@@ -930,18 +963,19 @@ void htc_pm_monitor_init(void)
 	prev_proc_stat = vmalloc(sizeof(int) * MAX_PID);
 	curr_proc_delta = vmalloc(sizeof(int) * MAX_PID);
 	task_ptr_array = vmalloc(sizeof(int) * MAX_PID);
-	curr_proc_pid = vmalloc(sizeof(int) * MAX_PID);     
+	curr_proc_pid = vmalloc(sizeof(int) * MAX_PID);     /* PWR2_ADD, @CPU sniffer: CPU usage statistics. */
 
 	memset(prev_proc_stat, 0, sizeof(int) * MAX_PID);
 	memset(curr_proc_delta, 0, sizeof(int) * MAX_PID);
 	memset(task_ptr_array, 0, sizeof(int) * MAX_PID);
-	memset(curr_proc_pid, 0, sizeof(int) * MAX_PID);    
+	memset(curr_proc_pid, 0, sizeof(int) * MAX_PID);    /* PWR2_ADD, @CPU sniffer: CPU usage statistics. */
 
 	get_all_cpu_stat(&new_cpu_stat);
 	get_all_cpu_stat(&old_cpu_stat);
 
 }
 
+/* PWR2_ADD_START, @CPU sniffer: CPU usage statistics. */
 void htc_kernel_top_monitor_init(void)
 {
 	if (htc_kernel_top_monitor_wq == NULL)
@@ -964,13 +998,14 @@ void htc_kernel_top_monitor_init(void)
 	get_all_cpu_stat(&new_cpu_stat_accu);
 	get_all_cpu_stat(&old_cpu_stat_accu);
 
-} 
+} /* htc_kernel_top_monitor_init() */
+/* PWR2_ADD_END, @CPU sniffer: CPU usage statistics. */
 
 
 void htc_monitor_init(void)
 {
 	if (htc_pm_monitor_wq == NULL) {
-		
+		/* Create private workqueue... */
 		htc_pm_monitor_wq = create_workqueue("htc_pm_monitor_wq");
 		printk(KERN_INFO "[K] Create HTC private workqueue(0x%x)...\n", (unsigned int)htc_pm_monitor_wq);
 	}
@@ -981,10 +1016,11 @@ void htc_monitor_init(void)
 	}
 }
 
+/* PWR2_ADD_START, @CPU sniffer: CPU usage statistics. */
 void htc_top_monitor_init(void)
 {
 	if (htc_kernel_top_monitor_wq == NULL) {
-		
+		/* Create private workqueue... */
 		htc_kernel_top_monitor_wq = create_workqueue("htc_kernel_top_monitor_wq");
 		printk(KERN_INFO "[K] [KTOP] Create HTC private workqueue(0x%x)...\n", (unsigned int)htc_kernel_top_monitor_wq);
 	}
@@ -994,10 +1030,11 @@ void htc_top_monitor_init(void)
 #if USE_STATISTICS_STRATEGY_CONTINUOUS_3
 		clear_current_pid_found_array();
 		clear_process_monitor_array(&process_monitor_continuous_3_array[0], SIZE_OF_PROCESS_MONITOR_CONTINUOUS_3_ARRAY);
-#else 
+#else /* <Not> USE_STATISTICS_STRATEGY_CONTINUOUS_3 */
 		clear_process_monitor_array(&process_monitor_5_in_10_array[0], SIZE_OF_PROCESS_MONITOR_5_IN_10_ARRAY);
-#endif 
+#endif /* USE_STATISTICS_STRATEGY_CONTINUOUS_3 */
 		INIT_DELAYED_WORK(&htc_kernel_top_delayed_work, htc_kernel_top_accumulation_monitor_work);
 	}
-} 
+} /* htc_top_monitor_init() */
+/* PWR2_ADD_END, @CPU sniffer: CPU usage statistics. */
 

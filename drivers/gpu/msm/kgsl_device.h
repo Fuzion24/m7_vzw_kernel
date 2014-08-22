@@ -26,12 +26,19 @@
 
 #define KGSL_TIMEOUT_NONE           0
 #define KGSL_TIMEOUT_DEFAULT        0xFFFFFFFF
-#define KGSL_TIMEOUT_PART           50 
-#define KGSL_TIMEOUT_LONG_IB_DETECTION  2000 
+#define KGSL_TIMEOUT_PART           50 /* 50 msec */
+#define KGSL_TIMEOUT_LONG_IB_DETECTION  2000 /* 2 sec*/
 
 #define FIRST_TIMEOUT (HZ / 2)
 
 
+/* KGSL device state is initialized to INIT when platform_probe		*
+ * sucessfully initialized the device.  Once a device has been opened	*
+ * (started) it becomes active.  NAP implies that only low latency	*
+ * resources (for now clocks on some platforms) are off.  SLEEP implies	*
+ * that the KGSL module believes a device is idle (has been inactive	*
+ * past its timer) and all system resources are released.  SUSPEND is	*
+ * requested by the kernel and will be enforced upon all open devices.	*/
 
 #define KGSL_STATE_NONE		0x00000000
 #define KGSL_STATE_INIT		0x00000001
@@ -55,6 +62,10 @@ struct kgsl_power_stats;
 struct kgsl_event;
 
 struct kgsl_functable {
+	/* Mandatory functions - these functions must be implemented
+	   by the client device.  The driver will not check for a NULL
+	   pointer before calling the hook.
+	 */
 	void (*regread) (struct kgsl_device *device,
 		unsigned int offsetwords, unsigned int *value);
 	void (*regwrite) (struct kgsl_device *device,
@@ -87,6 +98,9 @@ struct kgsl_functable {
 	void * (*snapshot)(struct kgsl_device *device, void *snapshot,
 		int *remain, int hang);
 	irqreturn_t (*irq_handler)(struct kgsl_device *device);
+	/* Optional functions - these functions are not mandatory.  The
+	   driver will check that the function pointer is not NULL before
+	   calling the hook */
 	void (*setstate) (struct kgsl_device *device, unsigned int context_id,
 			uint32_t flags);
 	int (*drawctxt_create) (struct kgsl_device *device,
@@ -104,6 +118,7 @@ struct kgsl_functable {
 		struct kgsl_event *event);
 };
 
+/* MH register values */
 struct kgsl_mh {
 	unsigned int     mharb;
 	unsigned int     mh_intf_cfg1;
@@ -165,17 +180,23 @@ struct kgsl_device {
 	struct idr context_idr;
 	struct early_suspend display_off;
 
-	void *snapshot;		
-	int snapshot_maxsize;   
-	int snapshot_size;      
-	u32 snapshot_timestamp;	
-	int snapshot_frozen;	
+	void *snapshot;		/* Pointer to the snapshot memory region */
+	int snapshot_maxsize;   /* Max size of the snapshot region */
+	int snapshot_size;      /* Current size of the snapshot region */
+	u32 snapshot_timestamp;	/* Timestamp of the last valid snapshot */
+	int snapshot_frozen;	/* 1 if the snapshot output is frozen until
+				   it gets read by the user.  This avoids
+				   losing the output on multiple hangs  */
 	struct kobject snapshot_kobj;
-	int snapshot_no_panic;  
+	int snapshot_no_panic;  /* HTC: deprecate kernel panic after GPU HANG if 1 */
 
+	/*
+	 * List of GPU buffers that have been frozen in memory until they can be
+	 * dumped
+	 */
 	struct list_head snapshot_obj_list;
 
-	
+	/* Logging levels */
 	int cmd_log;
 	int ctxt_log;
 	int drv_log;
@@ -191,11 +212,11 @@ struct kgsl_device {
 	struct list_head events_pending_list;
 	s64 on_time;
 
-	
+	/* Postmortem Control switches */
 	int pm_regs_enabled;
 	int pm_ib_enabled;
 
-	
+	/* gpu busy time */
 	struct kgsl_gpubusy gputime;
 	struct kgsl_gpubusy gputime_in_state[KGSL_MAX_PWRLEVELS];
 #ifdef CONFIG_MSM_KGSL_GPU_USAGE
@@ -225,6 +246,21 @@ void kgsl_check_fences(struct work_struct *work);
 	.ver_minor = DRIVER_VERSION_MINOR
 
 
+/**
+ * struct kgsl_context - Master structure for a KGSL context object
+ * @refcount - kref object for reference counting the context
+ * @id - integer identifier for the context
+ * @dev_priv - pointer to the owning device instance
+ * @devctxt - pointer to the device specific context information
+ * @reset_status - status indication whether a gpu reset occured and whether
+ * this context was responsible for causing it
+ * @wait_on_invalid_ts - flag indicating if this context has tried to wait on a
+ * bad timestamp
+ * @timeline - sync timeline used to create fences that can be signaled when a
+ * sync_pt timestamp expires
+ * @events - list head of pending events for this context
+ * @events_list - list node for the list of all contexts that have pending events
+ */
 struct kgsl_context {
 	struct kref refcount;
 	uint32_t id;
@@ -372,6 +408,8 @@ kgsl_find_context(struct kgsl_device_private *dev_priv, uint32_t id)
 	struct kgsl_context *ctxt =
 		idr_find(&dev_priv->device->context_idr, id);
 
+	/* Make sure that the context belongs to the current instance so
+	   that other processes can't guess context IDs and mess things up */
 
 	return  (ctxt && ctxt->dev_priv == dev_priv) ? ctxt : NULL;
 }
@@ -404,6 +442,15 @@ kgsl_device_get_drvdata(struct kgsl_device *dev)
 	return pdev->dev.platform_data;
 }
 
+/**
+ * kgsl_context_get - Get context reference count
+ * @context
+ *
+ * Asynchronous code that holds a pointer to a context
+ * must hold a reference count on it. The kgsl device
+ * mutex must be held while the context reference count
+ * is changed.
+ */
 static inline void
 kgsl_context_get(struct kgsl_context *context)
 {
@@ -412,12 +459,24 @@ kgsl_context_get(struct kgsl_context *context)
 
 void kgsl_context_destroy(struct kref *kref);
 
+/**
+ * kgsl_context_put - Release context reference count
+ * @context
+ *
+ */
 static inline void
 kgsl_context_put(struct kgsl_context *context)
 {
 	kref_put(&context->refcount, kgsl_context_destroy);
 }
 
+/**
+ * kgsl_active_count_put - Decrease the device active count
+ * @device: Pointer to a KGSL device
+ *
+ * Decrease the active count for the KGSL device and trigger the suspend_gate
+ * completion if it hits zero
+ */
 static inline void
 kgsl_active_count_put(struct kgsl_device *device)
 {
@@ -430,4 +489,4 @@ kgsl_active_count_put(struct kgsl_device *device)
 		complete(&device->suspend_gate);
 }
 
-#endif  
+#endif  /* __KGSL_DEVICE_H */

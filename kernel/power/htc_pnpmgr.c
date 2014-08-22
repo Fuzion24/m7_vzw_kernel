@@ -157,6 +157,7 @@ define_int_store(pause_dt, data_throttling_value, null_cb);
 power_attr(pause_dt);
 
 #ifdef CONFIG_HOTPLUG_CPU
+/* Multi-core tunables */
 static char mp_nw_arg[MAX_BUF];
 static char mp_tw_arg[MAX_BUF];
 static char mp_ns_arg[MAX_BUF];
@@ -222,7 +223,7 @@ power_attr(mp_util_low_and);
 define_string_show(mp_util_low_or, mp_util_low_or_arg);
 define_string_store(mp_util_low_or, mp_util_low_or_arg, null_cb);
 power_attr(mp_util_low_or);
-#endif 
+#endif /* CONFIG_HOTPLUG_CPU */
 
 #ifdef CONFIG_PERFLOCK
 extern ssize_t
@@ -289,6 +290,7 @@ static struct attribute *cpufreq_g[] = {
 	NULL,
 };
 
+/* Multi-core tunables */
 static struct attribute *hotplug_g[] = {
 #ifdef CONFIG_HOTPLUG_CPU
 	&mp_nw_attr.attr,
@@ -309,6 +311,7 @@ static struct attribute *hotplug_g[] = {
 	NULL,
 };
 
+/* Thermal conditions */
 static struct attribute *thermal_g[] = {
 	&thermal_c0_attr.attr,
 #if (CONFIG_NR_CPUS >= 2)
@@ -401,7 +404,7 @@ static struct attribute_group battery_attr_group = {
 static int __cpuinit cpu_hotplug_callback(struct notifier_block *nfb, unsigned long action, void *hcpu)
 {
 	switch (action) {
-		
+		/* To reduce overhead, we only notify cpu plug */
 		case CPU_ONLINE:
 		case CPU_ONLINE_FROZEN:
 			sysfs_notify(hotplug_kobj, NULL, "cpu_hotplug");
@@ -415,7 +418,7 @@ static int __cpuinit cpu_hotplug_callback(struct notifier_block *nfb, unsigned l
 
 static struct notifier_block __refdata cpu_hotplug_notifier = {
 	.notifier_call = cpu_hotplug_callback,
-	.priority = -10, 
+	.priority = -10, //after cpufreq.c:cpufreq_cpu_notifier -> cpufreq_add_dev()
 };
 #endif
 

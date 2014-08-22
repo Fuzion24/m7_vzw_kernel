@@ -45,12 +45,14 @@ static int m7wl_enable_digital_mic(void)
     int ret;
     if ((skuid & 0xFFF00) == 0x37900)
         ret = 1;
-    else
+    else if ((skuid & 0xFFF00) == 0x38D00)
         ret = 2;
+    else
+        ret = 3;
     printk(KERN_INFO "m7wlv_enable_digital_mic always:skuid=0x%x, system_rev=%x return %d\n", skuid, system_rev,ret);
     return ret;
 #else
-    
+    //Add for WLS/WLV
     int ret;
     if ((system_rev == XA)||(system_rev == XB)||(system_rev == XC)){
         ret = 0;
@@ -71,8 +73,10 @@ static int m7wl_enable_digital_mic(void)
     else{
         if ((skuid & 0xFFF00) == 0x35500)
             ret = 1;
-        else
+        else if ((skuid & 0xFFF00) == 0x38C00)
             ret = 2;
+        else
+            ret = 3;
     }
     printk(KERN_INFO "m7wls_enable_digital_mic:skuid=0x%x, system_rev=%x return %d\n", skuid, system_rev,ret);
     return ret;
@@ -118,7 +122,7 @@ static int __init m7wl_audio_init(void)
 {
         int ret = 0;
 
-	
+	/* RCV AMP */
 	gpio_request(RCV_PAMP_GPIO, "AUDIO_RCV_AMP");
 	gpio_tlmm_config(GPIO_CFG(67, 0, GPIO_CFG_OUTPUT, GPIO_CFG_PULL_DOWN, GPIO_CFG_2MA), GPIO_CFG_DISABLE);
 	htc_register_q6asm_ops(&qops);

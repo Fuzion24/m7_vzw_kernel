@@ -33,14 +33,18 @@
 #include "msm-pcm-q6.h"
 #include "msm-pcm-routing.h"
 
+//htc audio ++
 #undef pr_info
 #undef pr_err
 #define pr_info(fmt, ...) pr_aud_info(fmt, ##__VA_ARGS__)
 #define pr_err(fmt, ...) pr_aud_err(fmt, ##__VA_ARGS__)
+//htc audio --
 
 static struct audio_locks the_locks;
 
+//HTC_AUD_START
 static atomic_t audio_capture_buffer_count;
+//HTC_AUD_END
 
 struct snd_msm {
 	struct snd_card *card;
@@ -48,7 +52,11 @@ struct snd_msm {
 };
 
 #define PLAYBACK_NUM_PERIODS	8
-#define PLAYBACK_PERIOD_SIZE	2048
+#if defined(CONFIG_AUDIO_24BIT)
+#define PLAYBACK_PERIOD_SIZE	4096
+#else
+#define PLAYBACK_PERIOD_SIZE    2048
+#endif
 #define CAPTURE_NUM_PERIODS	16
 #define CAPTURE_PERIOD_SIZE	320
 
@@ -92,6 +100,7 @@ static struct snd_pcm_hardware msm_pcm_hardware_playback = {
 	.fifo_size =            0,
 };
 
+/* Conventional and unconventional sample rate supported */
 static unsigned int supported_sample_rates[] = {
 	8000, 11025, 12000, 16000, 22050, 24000, 32000, 44100, 48000
 };
@@ -132,9 +141,9 @@ static void event_handler(uint32_t opcode,
 	int i = 0;
 	uint32_t idx = 0;
 	uint32_t size = 0;
-	
+	//HTC_AUD_START
 	snd_pcm_uframes_t avail_count = 0;
-	
+	//HTC_AUD_END
 
 	pr_debug("%s\n", __func__);
 	switch (opcode) {
@@ -173,11 +182,11 @@ static void event_handler(uint32_t opcode,
 		in_frame_info[token][0] = payload[2];
 		in_frame_info[token][1] = payload[3];
 
-		
+		//HTC_AUD_START
 		atomic_dec(&audio_capture_buffer_count);
-		
+		//HTC_AUD_END
 
-		
+		/* assume data size = 0 during flushing */
 		if (in_frame_info[token][0]) {
 			prtd->pcm_irq_pos += in_frame_info[token][0];
 			pr_debug("pcm_irq_pos=%d\n", prtd->pcm_irq_pos);
@@ -206,7 +215,7 @@ static void event_handler(uint32_t opcode,
 				if (atomic_read(&prtd->start))
 					snd_pcm_period_elapsed(substream);
 
-				
+				//HTC_AUD_START
 				if(atomic_read(&prtd->start)){
 					avail_count = snd_pcm_capture_avail(prtd->substream->runtime);
 					if(avail_count == 0){
@@ -215,14 +224,14 @@ static void event_handler(uint32_t opcode,
 						q6asm_read(prtd->audio_client);
 					}
 				}
-				
+				//pr_debug("reclaim: avail_count %lu, audio_capture_is_waiting %d, start %d, audio_capture_buffer_count %d\n", avail_count, audio_capture_is_waiting, atomic_read(&prtd->start), atomic_read(&audio_capture_buffer_count));
 				pr_info("reclaim: avail_count %lu, start %d, audio_capture_buffer_count %d\n",
 					avail_count, atomic_read(&prtd->start), atomic_read(&audio_capture_buffer_count));
-				
+				//HTC_AUD_END
 
 				wake_up(&the_locks.read_wait);
 			}
-			
+			//HTC_AUD_START
 			else {
 				if(atomic_read(&prtd->start) && (atomic_read(&audio_capture_buffer_count) == 0)){
 					avail_count = snd_pcm_capture_avail(prtd->substream->runtime);
@@ -233,7 +242,7 @@ static void event_handler(uint32_t opcode,
 					}
 				}
 			}
-			
+			//HTC_AUD_END
 		}
 
 		break;
@@ -291,7 +300,7 @@ static int msm_pcm_playback_prepare(struct snd_pcm_substream *substream)
 	prtd->pcm_size = snd_pcm_lib_buffer_bytes(substream);
 	prtd->pcm_count = snd_pcm_lib_period_bytes(substream);
 	prtd->pcm_irq_pos = 0;
-	
+	/* rate and channels are sent to audio driver */
 	prtd->samp_rate = runtime->rate;
 	prtd->channel_mode = runtime->channels;
 	if (prtd->enabled)
@@ -324,7 +333,7 @@ static int msm_pcm_capture_prepare(struct snd_pcm_substream *substream)
 	prtd->pcm_count = snd_pcm_lib_period_bytes(substream);
 	prtd->pcm_irq_pos = 0;
 
-	
+	/* rate and channels are sent to audio driver */
 	prtd->samp_rate = runtime->rate;
 	prtd->channel_mode = runtime->channels;
 
@@ -351,9 +360,9 @@ static int msm_pcm_capture_prepare(struct snd_pcm_substream *substream)
 
 	prtd->enabled = 1;
 
-	
+	//HTC_AUD_START
 	atomic_set(&audio_capture_buffer_count, runtime->periods);
-	
+	//HTC_AUD_END
 
 	return ret;
 }
@@ -363,7 +372,9 @@ static int msm_pcm_trigger(struct snd_pcm_substream *substream, int cmd)
 	int ret = 0;
 	struct snd_pcm_runtime *runtime = substream->runtime;
 	struct msm_audio *prtd = runtime->private_data;
+//HTC AUD++
 	struct snd_soc_pcm_runtime *soc_prtd = substream->private_data;
+//HTC AUD--
 	switch (cmd) {
 	case SNDRV_PCM_TRIGGER_START:
 	case SNDRV_PCM_TRIGGER_RESUME:
@@ -377,9 +388,10 @@ static int msm_pcm_trigger(struct snd_pcm_substream *substream, int cmd)
 		atomic_set(&prtd->start, 0);
 		if (substream->stream != SNDRV_PCM_STREAM_PLAYBACK)
 			break;
+//HTC AUD, send EOS if beckend is opened
 		if(msm_routing_check_backend_enabled(soc_prtd->dai_link->be_id)) {
                     pr_info("%s:end eos\n",__func__);
-		    prtd->cmd_ack = 2; 
+		    prtd->cmd_ack = 2; //htc aud, carter, set cmd_ack to 2 to record that we send eos
 		    q6asm_cmd_nowait(prtd->audio_client, CMD_EOS);
                 }
 		break;
@@ -420,7 +432,7 @@ static int msm_pcm_open(struct snd_pcm_substream *substream)
 	if (substream->stream == SNDRV_PCM_STREAM_PLAYBACK) {
 		runtime->hw = msm_pcm_hardware_playback;
 	}
-	
+	/* Capture path */
 	if (substream->stream == SNDRV_PCM_STREAM_CAPTURE) {
 		runtime->hw = msm_pcm_hardware_capture;
 	}
@@ -430,7 +442,7 @@ static int msm_pcm_open(struct snd_pcm_substream *substream)
 				&constraints_sample_rates);
 	if (ret < 0)
 		pr_info("snd_pcm_hw_constraint_list failed\n");
-	
+	/* Ensure that buffer size is a multiple of period size */
 	ret = snd_pcm_hw_constraint_integer(runtime,
 					    SNDRV_PCM_HW_PARAM_PERIODS);
 	if (ret < 0)
@@ -512,7 +524,7 @@ static int msm_pcm_playback_close(struct snd_pcm_substream *substream)
 	pr_debug("%s\n", __func__);
 
 	dir = IN;
-	
+	//htc aud, carter, we have sent eos if the cmd ack is 2
 	if(msm_routing_check_backend_enabled(soc_prtd->dai_link->be_id) && prtd->cmd_ack == 2) {
 		pr_info("%s:wait eos\n",__func__);
 		ret = wait_event_timeout(the_locks.eos_wait,
@@ -591,9 +603,9 @@ static int msm_pcm_capture_copy(struct snd_pcm_substream *substream,
 		memset(&in_frame_info[idx], 0,
 			sizeof(uint32_t) * 2);
 		atomic_dec(&prtd->in_count);
-		
+		//HTC_AUD_START
 		atomic_inc(&audio_capture_buffer_count);
-		
+		//HTC_AUD_END
 		ret = q6asm_read(prtd->audio_client);
 		if (ret < 0) {
 			pr_err("q6asm read failed\n");
@@ -718,7 +730,7 @@ static int msm_pcm_hw_params(struct snd_pcm_substream *substream,
 	else
 		dir = OUT;
 
-	
+	/*playback path*/
 	if (substream->stream == SNDRV_PCM_STREAM_PLAYBACK) {
 		if (params_format(params) == SNDRV_PCM_FORMAT_S24_LE)
 			bit_width = 24;
@@ -740,7 +752,7 @@ static int msm_pcm_hw_params(struct snd_pcm_substream *substream,
 	}
 
 
-	
+	/*capture path*/
 	if (substream->stream == SNDRV_PCM_STREAM_CAPTURE) {
 		if (params_channels(params) > 2)
 			format = FORMAT_MULTI_CHANNEL_LINEAR_PCM;

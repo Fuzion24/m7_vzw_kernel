@@ -71,6 +71,7 @@ struct battery_info_reply {
 	u32 charging_enabled;
 	u32 full_bat;
 	u32 full_level;
+	u32 full_level_dis_batt_chg;
 	u32 over_vchg;
 	s32 temp_fault;
 	u32 batt_state;
@@ -86,6 +87,7 @@ struct htc_battery_core {
 	int (*func_charger_control)(enum charger_control_flag);
 	int (*func_context_event_handler)(enum batt_context_event);
 	void (*func_set_full_level)(int full_level);
+	void (*func_set_full_level_dis_batt_chg)(int full_level_dis_batt_chg);
 	int (*func_set_max_input_current)(int target_ma);
 	int (*func_notify_pnpmgr_charging_enabled)(int charging_enabled);
 };

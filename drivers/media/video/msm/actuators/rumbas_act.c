@@ -35,6 +35,7 @@
 
 #define DIV_CEIL(x, y) (x/y + (x%y) ? 1 : 0)
 
+/* Andrew_Cheng for DOF search steps MB */
 #define VCM_STEP_ONE_TO_ONE_MAPPING	1
 #define VCM_CALIBRATED	1
 #define GOLDEN_FAR_END			50
@@ -45,23 +46,32 @@
 static af_value_t g_af_value;
 static int copy_otp_once = FALSE;
 
+// Golden sample OTP: 50~250
 #if 0
+// 0, 21, 43, 64, 71, 78, 85, 93, 121, 150
+// 155, 162, 168, 178, 185, 199
 int kernel_step_table[kernel_step_table_size]
 	= {0, 10, 21, 32, 43, 53, 64, 67, 71, 74,
 	78, 81, 85, 89, 93, 107, 121, 135, 150, 152,
 	155, 158, 162, 165, 168, 173, 178, 181, 185};
 
+// 0, 21, 42, 64, 71, 78, 85, 92, 121, 149
+// 178, 206, 234, 263, 291
 int kernel_step_table[kernel_step_table_size]
 	= {0, 10, 21, 32, 43, 53, 64, 67, 71, 74,
 	78, 81, 85, 88, 92, 106, 121, 135, 149, 163,
 	178, 192, 206, 220, 234, 248, 263, 277, 291};
 #else
+// 0, 17, 34, 51, 78, 105, 132, 159, 194, 229,
+// 264, 299, 340, 381, 422, 463, 504......17 points
 int kernel_step_table[kernel_step_table_size]
+//	= {0, 8, 17, 25, 34, 42, 51, 64, 78, 91, 105, 118,
 	= {17, 25, 34, 42, 51, 64, 78, 91, 105, 118,
 	 132, 145, 159, 176, 194, 211, 229, 246, 264, 281,
 	 299, 319, 340, 360, 381, 401, 422, 442, 463, 483, 504};
 #endif
 
+/* Andrew_Cheng for DOF search steps ME */
 
 DEFINE_MUTEX(rumbas_act_mutex);
 static struct msm_actuator_ctrl_t rumbas_act_t;
@@ -69,7 +79,10 @@ static struct msm_actuator_ctrl_t rumbas_act_t;
 void rumbas_move_lens_position_by_stroke(int16_t stroke);
 
 static struct region_params_t g_regions[] = {
-	
+	/* step_bound[0] - macro side boundary
+	 * step_bound[1] - infinity side boundary
+	 */
+	/* Region 1 */
 	{
 		.step_bound = {RUMBAS_TOTAL_STEPS_NEAR_TO_FAR, 0},
 		.code_per_step = 2,
@@ -77,13 +90,13 @@ static struct region_params_t g_regions[] = {
 };
 
 static uint16_t g_scenario[] = {
-	
+	/* MOVE_NEAR and MOVE_FAR dir*/
 	RUMBAS_TOTAL_STEPS_NEAR_TO_FAR,
 };
 
 static struct damping_params_t g_damping[] = {
-	
-	
+	/* MOVE_NEAR Dir */
+	/* Scene 1 => Damping params */
 	{
 		.damping_step = 2,
 		.damping_delay = 0,
@@ -91,8 +104,8 @@ static struct damping_params_t g_damping[] = {
 };
 
 static struct damping_t g_damping_params[] = {
-	
-	
+	/* MOVE_NEAR and MOVE_FAR dir */
+	/* Region 1 */
 	{
 		.ringing_params = g_damping,
 	},
@@ -100,6 +113,7 @@ static struct damping_t g_damping_params[] = {
 
 static struct msm_actuator_info *rumbas_msm_actuator_info;
 
+/* HTC_START - for HW VCM work-around */
 void rumbas_set_internal_clk(void);
 void rumbas_disable_OIS(void);
 void rumbas_move_lens_position(int16_t next_lens_position);
@@ -116,7 +130,7 @@ void rumbas_do_cam_vcm_on_cb(void)
 	rumbas_msm_actuator_info->vcm_wa_vreg_on();
 	mdelay(5);
 
-	
+	/* Add protection for VCM work-around on device without main camera module */
 	rc = rumbas_poweron_af();
 	if (rc < 0) {
 		pr_err("%s rumbas power on failed\n", __func__);
@@ -167,7 +181,7 @@ void rumbas_do_cam_vcm_off_cb(void)
 	mdelay(10);
 	pr_info("[CAM_VCM_CB]  do_cam_vcm_off_work()   call rumbas_move_lens_position()   DONE\n");
 
-	
+	/* Extra moving by stroke */
 	rumbas_move_lens_position_by_stroke(45);
 	mdelay(20);
 	rumbas_move_lens_position_by_stroke(40);
@@ -181,7 +195,9 @@ void rumbas_do_cam_vcm_off_cb(void)
 
 	rumbas_msm_actuator_info->vcm_wa_vreg_off();
 }
+/* HTC_END */
 
+// HTC_START 20130110 Horng add for Startup Mode
 int32_t load_cmd_prevalue(int cmd_id, uint8_t *byte_data)
 {
 	int32_t rc = 0;
@@ -205,6 +221,7 @@ int32_t load_cmd_prevalue(int cmd_id, uint8_t *byte_data)
 
 	return rc;
 }
+// HTC_END
 
 static uint8_t rumbas_select_ois_map_table(table_type op)
 {
@@ -243,6 +260,7 @@ static uint8_t rumbas_select_ois_map_table(table_type op)
 
 }
 
+// HTC_START 20130110 Horng remove by HW request
 #if 0
 static uint8_t rumbas_level_angle_map_table(void *level_data, void *angle_data)
 {
@@ -255,14 +273,17 @@ static uint8_t rumbas_level_angle_map_table(void *level_data, void *angle_data)
 
 	if(!tbl_threshold_ptr || !mapping_tbl_ptr)
 		return 0;
-	
+	/*Decide row mapping*/
+/* HTC_START robert 20121126 set lin count for OIS*/
+/*TODO: Redesign new path, get line cnt from sensor*/
 	line = ois_line;
+/* HTC_END */
 	if(line > *tbl_threshold_ptr)
 		row_flag = 0;
 	else if(line< *(tbl_threshold_ptr+1))
 		row_flag = 2;
 
-	
+	/*Decide column mapping*/
 	rc = msm_camera_i2c_read_seq_rumbas(&(rumbas_act_t.i2c_client), (0x1E|0x80), &byte_read[0], 9);
 	if( rc < 0 )
 	{
@@ -294,15 +315,15 @@ static int32_t actuator_ois_setting_i2c_write(void)
 	int32_t rc = 0;
 	uint8_t byte_data[8];
 
-	
+	/*Panning Mode exit condition Setting*/
 			load_cmd_prevalue(0x1F, &byte_data[0]);
-			byte_data[0] = 0x10; 
+			byte_data[0] = 0x10; //0x01:most difficult, 0x10:easiest to exit panning mode, 0x04:default value
 			rc = msm_camera_i2c_write_seq(&(rumbas_act_t.i2c_client), 0x1F, &byte_data[0], 8);
 			if (rc < 0) {
 			pr_err("%s set 0x1F failed\n", __func__);
 			}
 
-	
+	/*0x30 disable*/
 			memset(byte_data, 0, sizeof(byte_data));
  			byte_data[0] = 0x00;
 			rc = msm_camera_i2c_write_seq(&(rumbas_act_t.i2c_client), 0x30, &byte_data[0], 8);
@@ -310,7 +331,7 @@ static int32_t actuator_ois_setting_i2c_write(void)
 				pr_err("%s set 0x30 failed\n", __func__);
 			}
 
-	
+	/*reset speed, lowpass filter size*/
 			memset(byte_data, 0, sizeof(byte_data));
 			load_cmd_prevalue(0x1C, &byte_data[0]);
 			((uint16_t *)byte_data)[0] = ENDIAN(3200);
@@ -324,6 +345,10 @@ static int32_t actuator_ois_setting_i2c_write(void)
 }
 
 
+/* HTC_START Horng 20130115 - Add OIS debug mechanism under MFG ROM by HW request */
+//#define FORCE_DISABLE_OIS_DEBUG 1
+//#define FORCE_ENABLE_OIS_DEBUG 1
+//#define LESS_LOG_FOR_OIS_DEBUG 1
 #define ILLEGAL_CMD_INPUT_VALUE 10000
 
 static int16_t g_fixed_rx_angle = ILLEGAL_CMD_INPUT_VALUE;
@@ -374,13 +399,13 @@ static int32_t process_OIS_MFG_debug(void)
 
 #ifndef LESS_LOG_FOR_OIS_DEBUG
 	int startup_mode;
-	
+	/* OIS Auto On/Off status and fast reset mode reading */
 	uint8_t auto_OIS_mode;
 	uint8_t fast_reset_mode;
-	
+	/* panning mode reading */
 	uint8_t panning_mode;
 #endif
-	
+	/* Gyro Raw data and Temperature reading */
 	int16_t *x_gyro_raw_ptr;
 	int16_t *y_gyro_raw_ptr;
 	int16_t *temperature_ptr;
@@ -388,29 +413,29 @@ static int32_t process_OIS_MFG_debug(void)
 	uint8_t y_gyro_raw[2];
 	uint8_t temperature[2];
 	int32_t temperature_degree;
-	
+	/* corrected Gyro data reading */
 	int32_t *x_gyro_corrected_ptr;
 	int32_t *y_gyro_corrected_ptr;
 	uint8_t x_gyro_corrected[4];
 	uint8_t y_gyro_corrected[4];
-	
+	/* Estimated Gyro Biases data reading */
 	int16_t *x_gyro_biases_ptr;
 	int16_t *y_gyro_biases_ptr;
 	uint8_t x_gyro_biases[2];
 	uint8_t y_gyro_biases[2];
-	
+	/* Cumulative Speed reading */
 	uint32_t *x_cumulative_speed_ptr;
 	uint32_t *y_cumulative_speed_ptr;
 	uint8_t x_cumulative_speed[4];
 	uint8_t y_cumulative_speed[4];
-	
+	/* Cumulative Acceleration reading */
 	uint32_t *x_cumulative_acceleration_ptr;
 	uint32_t *y_cumulative_acceleration_ptr;
 	uint8_t x_cumulative_acceleration[4];
 	uint8_t y_cumulative_acceleration[4];
 
-	
-	
+	/* below functions for RUMBA_S registers writing */
+	/* calibration_coefficient */
 	if(get_calibration_coefficient() < ILLEGAL_CMD_INPUT_VALUE)
 	{
 		load_cmd_prevalue(0x1F, &byte_data[0]);
@@ -422,7 +447,7 @@ static int32_t process_OIS_MFG_debug(void)
 		}
 	}
 
-	
+	/* reset_speed */
 	if(get_reset_speed() < ILLEGAL_CMD_INPUT_VALUE)
 	{
 		load_cmd_prevalue(0x1C, &byte_data[0]);
@@ -434,7 +459,7 @@ static int32_t process_OIS_MFG_debug(void)
 		}
 	}
 
-	
+	/* fast_reset_mode */
 	if(get_fast_reset_mode() < ILLEGAL_CMD_INPUT_VALUE)
 	{
 		load_cmd_prevalue(0x10, &byte_data[0]);
@@ -446,7 +471,7 @@ static int32_t process_OIS_MFG_debug(void)
 		}
 	}
 
-	
+	/* LFCE */
 	if(get_LFCE() < ILLEGAL_CMD_INPUT_VALUE)
 	{
 		load_cmd_prevalue(0x10, &byte_data[0]);
@@ -458,7 +483,7 @@ static int32_t process_OIS_MFG_debug(void)
 		}
 	}
 
-	
+	/* OIS_level */
 	if(get_OIS_level() < ILLEGAL_CMD_INPUT_VALUE)
 	{
 		load_cmd_prevalue(0x10, &byte_data[0]);
@@ -470,7 +495,7 @@ static int32_t process_OIS_MFG_debug(void)
 		}
 	}
 
-	
+	/* AutoOnOffThresholds_parm1, AutoOnOffThresholds_parm2 */
 	if ( (get_AutoOnOffThresholds_parm1() < ILLEGAL_CMD_INPUT_VALUE) && (get_AutoOnOffThresholds_parm2() < ILLEGAL_CMD_INPUT_VALUE) )
 	{
 		load_cmd_prevalue(0x1B, &byte_data[0]);
@@ -484,7 +509,7 @@ static int32_t process_OIS_MFG_debug(void)
 		}
 	}
 
-	
+	/* X-Angle,Y-Angle */
 	if( (get_fixed_rx_angle() < ILLEGAL_CMD_INPUT_VALUE) && (get_fixed_ry_angle() < ILLEGAL_CMD_INPUT_VALUE) )
 	{
 		load_cmd_prevalue(0x12, &byte_data[0]);
@@ -511,8 +536,8 @@ static int32_t process_OIS_MFG_debug(void)
 	}
 
 
-	
-	
+	/* below functions for RUMBA_S registers reading */
+	/* Compensation Angles and Velocities reading */
 	load_cmd_prevalue(0x12, &byte_data[0]);
 	x_angle[0] = byte_data[1];
 	x_angle[1] = byte_data[0];
@@ -524,7 +549,7 @@ static int32_t process_OIS_MFG_debug(void)
 
 
 #ifndef LESS_LOG_FOR_OIS_DEBUG
-	
+	/* OIS Auto On/Off status and fast reset mode reading */
 	load_cmd_prevalue(0x1B, &byte_data[0]);
 	auto_OIS_mode = (byte_data[4] & 0x04) >> 2;
 	if (auto_OIS_mode == 1)
@@ -541,7 +566,7 @@ static int32_t process_OIS_MFG_debug(void)
 	pr_info("[RUMBA_S]  [0x10] Read startup mode :  startup_mode=0x%02x\n", startup_mode);
 
 
-	
+	/* real/fake panning mode reading */
 	load_cmd_prevalue(0x1F, &byte_data[0]);
 	panning_mode = (byte_data[1] & 0x03);
 	if (panning_mode == 0) {
@@ -569,7 +594,7 @@ static int32_t process_OIS_MFG_debug(void)
 #endif
 
 
-	
+	/* Gyro Raw data and Temperature reading */
 	load_cmd_prevalue(0x16, &byte_data[0]);
 	x_gyro_raw[0] = byte_data[1];
 	x_gyro_raw[1] = byte_data[0];
@@ -586,7 +611,7 @@ static int32_t process_OIS_MFG_debug(void)
 		*x_gyro_raw_ptr, *y_gyro_raw_ptr, (temperature_degree/1000), (temperature_degree%1000) , *temperature_ptr);
 
 
-	
+	/* corrected Gyro data reading */
 	load_cmd_prevalue(0x34, &byte_data[0]);
 	x_gyro_corrected[0] = byte_data[3];
 	x_gyro_corrected[1] = byte_data[2];
@@ -601,7 +626,7 @@ static int32_t process_OIS_MFG_debug(void)
 	pr_info("[RUMBA_S]  x_gyro_corrected = %08d , y_gyro_corrected = %08d\n", *x_gyro_corrected_ptr, *y_gyro_corrected_ptr);
 
 
-	
+	/* Estimated Gyro Biases data reading */
 	load_cmd_prevalue(0x35, &byte_data[0]);
 	x_gyro_biases[0] = byte_data[1];
 	x_gyro_biases[1] = byte_data[0];
@@ -612,7 +637,7 @@ static int32_t process_OIS_MFG_debug(void)
 	pr_info("[RUMBA_S]  x_gyro_biases =    %08d , y_gyro_biases =    %08d\n",*x_gyro_biases_ptr, *y_gyro_biases_ptr);
 
 
-	
+	/* Cumulative Speed reading */
 	load_cmd_prevalue(0x1D, &byte_data[0]);
 	x_cumulative_speed[0] = byte_data[3];
 	x_cumulative_speed[1] = byte_data[2];
@@ -628,7 +653,7 @@ static int32_t process_OIS_MFG_debug(void)
 		*x_cumulative_speed_ptr / 128, *y_cumulative_speed_ptr / 128);
 
 
-	
+	/* Cumulative Acceleration reading */
 	load_cmd_prevalue(0x1E, &byte_data[0]);
 	x_cumulative_acceleration[0] = byte_data[3];
 	x_cumulative_acceleration[1] = byte_data[2];
@@ -645,6 +670,7 @@ static int32_t process_OIS_MFG_debug(void)
 
 	return rc;
 }
+/* HTC_END */
 
 
 static int32_t actuator_mappingTbl_i2c_write(int startup_mode, struct sensor_actuator_info_t * sensor_actuator_info)
@@ -652,6 +678,7 @@ static int32_t actuator_mappingTbl_i2c_write(int startup_mode, struct sensor_act
 	int32_t rc = 0;
 	uint8_t byte_data[8];
 	static int ois_nonmap_setting = 1;
+// HTC_START 20130110 Horng remove by HW request
 #if 0
 	uint16_t max_com_angel = DEFAULT_MAX_ANGLE_COM;
 	uint16_t ois_level = DEFAULT_OIS_LEVEL;
@@ -659,6 +686,8 @@ static int32_t actuator_mappingTbl_i2c_write(int startup_mode, struct sensor_act
 	static uint16_t pre_max_angel = 0;
 	static uint16_t pre_ois_level = 0;
 #endif
+// HTC_END
+/* HTC_START Horng 20130122 */
 	camera_video_mode_type cur_cam_mode;
 	uint32_t cur_line_cnt = 0;
 	uint32_t cur_exp_time = 0;
@@ -673,12 +702,13 @@ static int32_t actuator_mappingTbl_i2c_write(int startup_mode, struct sensor_act
 	uint32_t level_threshold_3 = 0;
 	uint32_t level_threshold_4 = 0;
 	uint32_t level_threshold_5 = 0;
-	uint32_t level_threshold_6 = 7000;   
-	uint32_t level_threshold_7 = 1000000;
+	uint32_t level_threshold_6 = 7000;   /*normal light*/
+	uint32_t level_threshold_7 = 1000000;/*normal light*/
 	uint32_t level_threshold_8 = 1000000;
+/* HTC_END */
 
 	if (startup_mode == 1) {
-		
+		// HTC_START 20130110 Horng add for Startup Mode
 		load_cmd_prevalue(0x10, &byte_data[0]);
 
 		byte_data[4] = (byte_data[4] & 0xF8) | 0x05;
@@ -691,10 +721,10 @@ static int32_t actuator_mappingTbl_i2c_write(int startup_mode, struct sensor_act
 		if (rc < 0) {
 			pr_err("[OIS] %s set Startup Mode, i2c write failed (%d)\n", __func__, rc);
 		}
-		
+		// HTC_END
 
 		if(!board_mfg_mode()) {
-			
+			/* MAX compensation angle */
 			load_cmd_prevalue(0x1A, &byte_data[0]);
 			((uint16_t *)byte_data)[0] = ENDIAN(500);
 			pr_info("[RUMBA_S]  set MAX compensation angle : 500\n");
@@ -706,10 +736,12 @@ static int32_t actuator_mappingTbl_i2c_write(int startup_mode, struct sensor_act
 	}
 
 
+/* HTC_START Horng 20130115 - Add OIS debug mechanism under MFG ROM by HW request */
 	if (check_if_enable_OIS_MFG_debug())
 		process_OIS_MFG_debug();
 	else
 		pr_info("[RUMBA_S]  Force disable OIS debug log\n");
+/* HTC_END */
 
 
 	if(ois_nonmap_setting) {
@@ -717,6 +749,7 @@ static int32_t actuator_mappingTbl_i2c_write(int startup_mode, struct sensor_act
 		ois_nonmap_setting = 0;
 	}
 
+/* HTC_START Horng 20130122 */
 	cur_cam_mode = sensor_actuator_info->cam_mode;
 	cur_line_cnt = sensor_actuator_info->cur_line_cnt;
 	cur_exp_time = sensor_actuator_info->cur_exp_time;
@@ -786,8 +819,8 @@ static int32_t actuator_mappingTbl_i2c_write(int startup_mode, struct sensor_act
 		AutoOISLevel = 1;
 		if (cur_exp_time >= (1000/24)) {
 			cur_ois_level= 6;
-			level_threshold_6 = 0;
-			level_threshold_7 = 7000;
+			level_threshold_6 = 0;/*low light*/
+			level_threshold_7 = 7000;/*low light*/
 		} else if (cur_exp_time >= (1000/48)) {
 			cur_ois_level= 6;
 		} else if (cur_exp_time >= (1000/83)) {
@@ -824,18 +857,18 @@ static int32_t actuator_mappingTbl_i2c_write(int startup_mode, struct sensor_act
 		cur_cmp_angle, cur_threshold_1, cur_threshold_2, cur_zoom_level, AutoOISLevel);
 
 	if (ois_off) {
-		
+		/* OIS mode and level */
 		load_cmd_prevalue(0x10, &byte_data[0]);
-		byte_data[0] = 0x02; 
-		byte_data[6] = (byte_data[6] & 0xFD) |(0x01 << 1); 
+		byte_data[0] = 0x02; /* OIS AUTO  MODE */
+		byte_data[6] = (byte_data[6] & 0xFD) |(0x01 << 1); /* FAST RESET MODE */
 		rc = msm_camera_i2c_write_seq(&(rumbas_act_t.i2c_client), 0x10, &byte_data[0], 8);
 		if (rc < 0) {
 			pr_err("[RUMBA_S] %s  OIS mode and level  i2c write failed (%d)\n", __func__, rc);
 		}
 	} else {
-		
+		/* OIS mode and level */
 		load_cmd_prevalue(0x10, &byte_data[0]);
-		byte_data[0] = 0x02; 
+		byte_data[0] = 0x02; /* OIS AUTO MODE */
 		byte_data[4] = (byte_data[4] & 0xF8) | cur_ois_level;
 		byte_data[6] = (byte_data[6] & 0xFD);
 		rc = msm_camera_i2c_write_seq(&(rumbas_act_t.i2c_client), 0x10, &byte_data[0], 8);
@@ -843,7 +876,7 @@ static int32_t actuator_mappingTbl_i2c_write(int startup_mode, struct sensor_act
 			pr_err("[RUMBA_S] %s  OIS mode and level  i2c write failed (%d)\n", __func__, rc);
 		}
 
-		
+		/* MAX compensation angle */
 		load_cmd_prevalue(0x1A, &byte_data[0]);
 		((uint16_t *)byte_data)[0] = ENDIAN(cur_cmp_angle);
 		rc = msm_camera_i2c_write_seq(&(rumbas_act_t.i2c_client), 0x1A, &byte_data[0], 8);
@@ -851,7 +884,7 @@ static int32_t actuator_mappingTbl_i2c_write(int startup_mode, struct sensor_act
 			pr_err("[RUMBA_S] %s  MAX compensation angle  i2c write failed (%d)\n", __func__, rc);
 		}
 
-		
+		/* OIS Auto On/Off Threshold */
 		load_cmd_prevalue(0x1B, &byte_data[0]);
 		((uint16_t *)byte_data)[0] = ENDIAN(cur_threshold_1);
 		((uint16_t *)byte_data)[1] = ENDIAN(cur_threshold_2);
@@ -902,8 +935,10 @@ static int32_t actuator_mappingTbl_i2c_write(int startup_mode, struct sensor_act
 			}
 		}
 	}
+/* HTC_END */
 
 
+// HTC_START 20130110 Horng remove by HW request
 #if 0
 	ois_enable = rumbas_level_angle_map_table(&ois_level, &max_com_angel);
 
@@ -913,7 +948,7 @@ static int32_t actuator_mappingTbl_i2c_write(int startup_mode, struct sensor_act
 	pre_ois_level = ois_level;
 
 	load_cmd_prevalue(0x1B, &byte_data[0]);
-	
+	/*OIS Auto On/Off Thresholds*/
 	if(!ois_enable)
 		((uint16_t *)byte_data)[0] = 0xffff;
 	rc = msm_camera_i2c_write_seq(&(rumbas_act_t.i2c_client), 0x1B, &byte_data[0], 8);
@@ -924,7 +959,7 @@ static int32_t actuator_mappingTbl_i2c_write(int startup_mode, struct sensor_act
 	if(!ois_enable)
 		return rc;
 
-	
+	/*MAX compensation angle*/
 	memset(byte_data, 0, sizeof(byte_data));
 	((uint16_t *)byte_data)[0] = ENDIAN(max_com_angel);
 	rc = msm_camera_i2c_write_seq(&(rumbas_act_t.i2c_client), 0x1A, &byte_data[0], 8);
@@ -932,18 +967,19 @@ static int32_t actuator_mappingTbl_i2c_write(int startup_mode, struct sensor_act
 		pr_err("[OIS] %s MAX compensation angle i2c write failed (%d)\n", __func__, rc);
 	}
 
-	
+	/*OIS mode*/
 	memset(byte_data, 0, sizeof(byte_data));
 	load_cmd_prevalue(0x10, &byte_data[0]);
-	byte_data[0] = 0x02; 
-	ois_level_value = byte_data[4] = ois_level+8; 
-	pan_mode_enable = byte_data[5] = 0x01; 
-	tri_moode_enable = byte_data[6] = 0x00; 
+	byte_data[0] = 0x02; //0x00:VCM off, 0x01:only AF, 0x02:OIS enable
+	ois_level_value = byte_data[4] = ois_level+8; //LFCE on
+	pan_mode_enable = byte_data[5] = 0x01; //0x00:Panning mode off, 0x01:Panning mode on
+	tri_moode_enable = byte_data[6] = 0x00; //0x00:Tripod mode off, 0x01:Tripod mode auto, 0x02:Tripod mode on
 	rc = msm_camera_i2c_write_seq(&(rumbas_act_t.i2c_client), 0x10, &byte_data[0], 8);
 	if (rc < 0) {
 		pr_err("%s set ois mode failed\n", __func__);
 	}
 #endif
+// HTC_END
 
 	return rc;
 }
@@ -953,7 +989,7 @@ int32_t rumbas_poweron_af(void)
 {
 	int32_t rc = 0;
 
-	
+	/* Add protection for VCM work-around on device without main camera module */
 	if (rumbas_msm_actuator_info == NULL)
 		return -1;
 
@@ -974,7 +1010,7 @@ void rumbas_poweroff_af(void)
 {
 	int32_t rc = 0;
 
-	
+	/* Add protection for VCM work-around on device without main camera module */
 	if (rumbas_msm_actuator_info == NULL)
 		return;
 
@@ -1001,6 +1037,7 @@ int32_t rumbas_msm_actuator_init_table(
 	if (a_ctrl->func_tbl.actuator_set_params)
 		a_ctrl->func_tbl.actuator_set_params(a_ctrl);
 
+// HTC_START 20121004
 #if 0
 	if (rumbas_act_t.step_position_table) {
 		LINFO("%s table inited\n", __func__);
@@ -1012,13 +1049,14 @@ int32_t rumbas_msm_actuator_init_table(
 		a_ctrl->set_info.total_steps = RUMBAS_TOTAL_STEPS_NEAR_TO_FAR_RAWCHIP_AF;
 	else
 		a_ctrl->set_info.total_steps = RUMBAS_TOTAL_STEPS_NEAR_TO_FAR;
+// HTC_END
 
-	
+	// HTC_START joey 20130106 - ois mfg test - set mfg test progressing flag based on reload param
 	a_ctrl->ois_mfgtest_in_progress = a_ctrl->set_info.ois_mfgtest_in_progress_reload;
 	if (a_ctrl->ois_mfgtest_in_progress) pr_info("[MFGOIS] %s: mfg ois testing...", __FUNCTION__);
-	
+	// HTC_END
 
-	
+	/* Fill step position table */
 	if (a_ctrl->step_position_table != NULL) {
 		kfree(a_ctrl->step_position_table);
 		a_ctrl->step_position_table = NULL;
@@ -1036,7 +1074,7 @@ int32_t rumbas_msm_actuator_init_table(
 
 		a_ctrl->step_position_table[0] = a_ctrl->initial_code;
 		for (i = 1; i <= a_ctrl->set_info.total_steps; i++) {
-			if (rumbas_msm_actuator_info->use_rawchip_af && a_ctrl->af_algo == AF_ALGO_RAWCHIP) 
+			if (rumbas_msm_actuator_info->use_rawchip_af && a_ctrl->af_algo == AF_ALGO_RAWCHIP) // HTC 20121004)
 				a_ctrl->step_position_table[i] =
 					a_ctrl->step_position_table[i-1] + 4;
 			else
@@ -1065,12 +1103,19 @@ int32_t rumbas_msm_actuator_init_table(
 	return rc;
 }
 
+/* Andrew_Cheng for DOF search steps MB */
 #if VCM_CALIBRATED
+/*
+S = G*a+b
+b = (G2*S1 - G1*S2) / (G2 - G1)
+a = (S1 - S2) / (G1 - G2)
+*/
 int32_t VCM_Transform(int near_end, int far_end, int position)
 {
 	return (position - GOLDEN_FAR_END) * (near_end - far_end) / (GOLDEN_NEAR_END - GOLDEN_FAR_END) + far_end;
 }
 #endif
+/* Andrew_Cheng for DOF search steps ME */
 
 int32_t rumbas_msm_actuator_move_focus(
 	struct msm_actuator_ctrl_t *a_ctrl,
@@ -1081,7 +1126,7 @@ int32_t rumbas_msm_actuator_move_focus(
 	int8_t sign_dir = 0;
 	int16_t dest_step_pos = 0;
 	#if VCM_STEP_ONE_TO_ONE_MAPPING
-	int16_t dest_step_pos_VCM = 0;    
+	int16_t dest_step_pos_VCM = 0;    /* Andrew_Cheng for DOF search steps */
 	#endif
 
 	LINFO("%s called, dir %d, num_steps %d\n",
@@ -1089,11 +1134,11 @@ int32_t rumbas_msm_actuator_move_focus(
 		dir,
 		num_steps);
 
-	
+	/* 20121003 Horng work-around for the total_steps to be clear to 0 */
 	if (a_ctrl->set_info.total_steps == 0)
 		a_ctrl->set_info.total_steps = RUMBAS_TOTAL_STEPS_NEAR_TO_FAR;
 
-	
+	/* Determine sign direction */
 	if (dir == MOVE_NEAR)
 		sign_dir = 1;
 	else if (dir == MOVE_FAR)
@@ -1104,15 +1149,16 @@ int32_t rumbas_msm_actuator_move_focus(
 		return rc;
 	}
 
-	
+	/* Determine destination step position */
 	dest_step_pos = a_ctrl->curr_step_pos +
 		(sign_dir * num_steps);
 
-#if VCM_STEP_ONE_TO_ONE_MAPPING   
+/* Andrew_Cheng for DOF search steps MB */
+#if VCM_STEP_ONE_TO_ONE_MAPPING   /* Build device:kernel as 1:1 mode */
 	if (!a_ctrl->ois_mfgtest_in_progress) {
 		if (dest_step_pos == a_ctrl->curr_step_pos)
 			return rc;
-		
+		/* AndreW_Cheng, code for transfer dest_step_position to dest_step_position_VCM */
 		if (dest_step_pos < 0)
 			dest_step_pos = 0;
 		else if (dest_step_pos >= kernel_step_table_size)
@@ -1138,6 +1184,7 @@ int32_t rumbas_msm_actuator_move_focus(
 			a_ctrl->step_position_table[dest_step_pos], NULL);
 	}
 
+/* Andrew_Cheng for DOF search steps ME */
 #else
 	if (dest_step_pos < 0)
 		dest_step_pos = 0;
@@ -1169,7 +1216,7 @@ int rumbas_actuator_af_power_down(void *params)
 
 	rc = (int) msm_actuator_af_power_down(&rumbas_act_t);
 
-	
+	/* Extra moving by stroke */
 	rumbas_move_lens_position_by_stroke(45);
 	mdelay(15);
 	rumbas_move_lens_position_by_stroke(40);
@@ -1191,12 +1238,12 @@ static int32_t rumbas_wrapper_i2c_write(struct msm_actuator_ctrl_t *a_ctrl,
 	int32_t positon;
 
 #if 0
-	
+	/* The range of the stroke is from 100 to 400 micron M */
 	positon = 100 + (next_lens_position * 300 /1024);
 #else
-	
-	
-	
+	/* The range from 85 to 400 is for sensor with new calibration data */
+	// positon = 85 + (next_lens_position * (400-85) /1024);
+	/* sharp position: 50~450 @ 20121213 */
 	#if VCM_CALIBRATED
 	int32_t	sharp_position_at_Golden_sample = 0;
 
@@ -1204,24 +1251,26 @@ static int32_t rumbas_wrapper_i2c_write(struct msm_actuator_ctrl_t *a_ctrl,
 	{
 		sharp_position_at_Golden_sample = 50 + (next_lens_position * (450-50) /1024);
 		positon = VCM_Transform(a_ctrl->af_OTP_info.VCM_Macro, a_ctrl->af_OTP_info.VCM_Infinity, sharp_position_at_Golden_sample);
-		
+		// positon = VCM_Transform(VCM_Macro, 50, sharp_position_at_Golden_sample);  // infinity value is not reliable
 	}
 	else
 		positon = 50 + (next_lens_position * (450-50) /1024);
-		
-		
+		//pr_info("%s, QCTAF, next_lens_position=>sharp_position_at_Golden_sample=>positon, %d=>%d=>%d (%d, %d, %d)"
+		//, __func__, next_lens_position, sharp_position_at_Golden_sample, positon, a_ctrl->af_OTP_info.VCM_Start, a_ctrl->af_OTP_info.VCM_Infinity, a_ctrl->af_OTP_info.VCM_Macro);
 	#else
 	positon = 50 + (next_lens_position * (450-50) /1024);
 	#endif
 #endif
 
 
+/* HTC_START Horng 20130115 - Add OIS debug mechanism under MFG ROM by HW request */
 	if (check_if_enable_OIS_MFG_debug())
 	{
 		if (get_fixed_lens_position() < ILLEGAL_CMD_INPUT_VALUE)
 			positon = get_fixed_lens_position();
 		pr_info("[RUMBA_S]  VCM lens position = %d\n", positon);
 	}
+/* HTC_END */
 
 	if(a_ctrl->enable_focus_step_log)
 		pr_info("%s next_lens_position: %d, positon: %d, VCM_Macro: %d, VCM_Infinity: %d\n", __func__,
@@ -1282,7 +1331,7 @@ static int32_t rumbas_act_init_focus(struct msm_actuator_ctrl_t *a_ctrl)
 	else
 		a_ctrl->curr_step_pos = 0;
 
-	a_ctrl->ois_mfgtest_in_progress = 0; 
+	a_ctrl->ois_mfgtest_in_progress = 0; // HTC joey 20130106 - ois mfg test - initialization
 
 	if(rumbas_act_t.actuator_ext_ctrl.is_ois_supported) {
 		memset(byte_read, 0, sizeof(byte_read));
@@ -1297,9 +1346,9 @@ static int32_t rumbas_act_init_focus(struct msm_actuator_ctrl_t *a_ctrl)
 		}
 	}
 
-	
+	// HTC_START 20130128 Horng add by HW request
 	if (rumbas_act_t.ois_ready_version) {
-		if (a_ctrl->af_OTP_info.act_id == 0x11 || a_ctrl->af_OTP_info.act_id == 0x31) { 
+		if (a_ctrl->af_OTP_info.act_id == 0x11 || a_ctrl->af_OTP_info.act_id == 0x31) { /* BYD de-ring */
 			memset(byte_data, 0, sizeof(byte_data));
 			load_cmd_prevalue(0x39, &byte_data[0]);
 			((uint16_t *)byte_data)[0] = ENDIAN(19);
@@ -1313,9 +1362,9 @@ static int32_t rumbas_act_init_focus(struct msm_actuator_ctrl_t *a_ctrl)
 
 		memset(byte_data, 0, sizeof(byte_data));
 		load_cmd_prevalue(0x27, &byte_data[0]);
-		if (a_ctrl->af_OTP_info.act_id == 0x11 || a_ctrl->af_OTP_info.act_id == 0x31) 
+		if (a_ctrl->af_OTP_info.act_id == 0x11 || a_ctrl->af_OTP_info.act_id == 0x31) /* BYD */
 			((int16_t *)byte_data)[0] = ENDIAN(8);
-		else 
+		else /* APP */
 			((int16_t *)byte_data)[0] = ENDIAN(-10);
 		rc = msm_camera_i2c_write_seq(&(rumbas_act_t.i2c_client),
 			0x27, &byte_data[0], 8);
@@ -1325,40 +1374,46 @@ static int32_t rumbas_act_init_focus(struct msm_actuator_ctrl_t *a_ctrl)
 
 		if(!board_mfg_mode()) {
 			load_cmd_prevalue(0x10, &byte_data[0]);
-			byte_data[6] = (byte_data[6] & 0xFD) |(0x01 << 1); 
+			byte_data[6] = (byte_data[6] & 0xFD) |(0x01 << 1); /* FAST RESET MODE */
 			rc = msm_camera_i2c_write_seq(&(rumbas_act_t.i2c_client), 0x10, &byte_data[0], 8);
 			if (rc < 0) {
 				pr_err("[RUMBA_S] %s  set fast reset mode , i2c write failed (%d)\n", __func__, rc);
 			}
 		}
 	}
-	
+	// HTC_END
 
 	return rc;
 }
 
+/* HTC_START Horng 20121105 - OIS MODE */
 int32_t rumbas_act_set_ois_mode(struct msm_actuator_ctrl_t *a_ctrl, int ois_mode)
 {
 	int32_t rc = 0;
 	uint8_t byte_data[8];
+/* HTC_START Horng 20130122 */
 	uint8_t byte_data_2[8];
+/* HTC_END */
 
 	pr_info("%s called , ois_mode:%d\n", __func__, ois_mode);
 	load_cmd_prevalue(0x10, &byte_data[0]);
 	if (ois_mode == 0) {
-		byte_data[0] = 0x01; 
+		byte_data[0] = 0x01; /* OIS MANUAL MODE */
 	} else {
-		byte_data[0] = 0x02; 
+		byte_data[0] = 0x02; /* OIS AUTO MODE */
 
+// HTC_START 20130110 Horng remove by HW request
 #if 0
 		byte_data[4] = ois_level_value;
 		byte_data[5] = pan_mode_enable;
-		byte_data[6] = tri_moode_enable; 
+		byte_data[6] = tri_moode_enable; //0x00:Tripod mode off, 0x01:Tripod mode auto, 0x02:Tripod mode on
 #endif
+// HTC_END
 
 		if(ois_mode == 1) {
 			rumbas_select_ois_map_table(MFG_TABLE);
-			
+/* HTC_START Horng 20130122 */
+			/* OIS Auto On/Off Threshold */
 			load_cmd_prevalue(0x1B, &byte_data_2[0]);
 			((uint16_t *)byte_data_2)[0] = ENDIAN(0);
 			((uint16_t *)byte_data_2)[1] = ENDIAN(0);
@@ -1366,6 +1421,7 @@ int32_t rumbas_act_set_ois_mode(struct msm_actuator_ctrl_t *a_ctrl, int ois_mode
 			if (rc < 0) {
 				pr_err("[RUMBA_S] %s  OIS Auto On/Off Threshold  i2c write failed (%d)\n", __func__, rc);
 			}
+/* HTC_END */
 		} else
 			rumbas_select_ois_map_table(USER_TABLE);
 	}
@@ -1378,7 +1434,9 @@ int32_t rumbas_act_set_ois_mode(struct msm_actuator_ctrl_t *a_ctrl, int ois_mode
 
 	return rc;
 }
+/* HTC_END */
 
+/* HTC_START Robert 20121126 - update OIS table */
 int32_t rumbas_act_update_ois_tbl(struct msm_actuator_ctrl_t *a_ctrl, struct sensor_actuator_info_t * sensor_actuator_info)
 {
 	int32_t rc = 0;
@@ -1389,6 +1447,7 @@ int32_t rumbas_act_update_ois_tbl(struct msm_actuator_ctrl_t *a_ctrl, struct sen
 	}
 	return rc;
 }
+/* HTC_END */
 
 int32_t rumbas_act_set_af_value(struct msm_actuator_ctrl_t *a_ctrl, af_value_t af_value)
 {
@@ -1408,9 +1467,9 @@ int32_t rumbas_act_set_af_value(struct msm_actuator_ctrl_t *a_ctrl, af_value_t a
 	OTP_data[3] = af_value.AF_INF_LSB;
 	OTP_data[4] = af_value.AF_MACRO_MSB;
 	OTP_data[5] = af_value.AF_MACRO_LSB;
-	
+	/*opt diviation depends on different trace wide*/
 
-	
+	/*adjust otp diviation depends on different project*/
 	if(rumbas_msm_actuator_info->otp_diviation)
 		otp_deviation = rumbas_msm_actuator_info->otp_diviation;
 
@@ -1437,6 +1496,7 @@ int32_t rumbas_act_set_af_value(struct msm_actuator_ctrl_t *a_ctrl, af_value_t a
 
 
 
+/* HTC_START Horng 20130118 - OIS calibration */
 void rumbas_move_lens_position(int16_t next_lens_position);
 static struct msm_actuator_get_ois_cal_info_t cal_info;
 
@@ -1455,7 +1515,7 @@ int32_t  rumbas_act_read_cal_data(void)
 	int8_t x_slope;
 	int8_t y_slope;
 
-       
+       /* Gyro calibration offset and slope reading */
        load_cmd_prevalue(0x19, &byte_data[0]);
 	x_offset[0] = byte_data[1];
 	x_offset[1] = byte_data[0];
@@ -1507,7 +1567,7 @@ int32_t rumbas_act_write_ois_calibration_method1(struct msm_actuator_get_ois_cal
 
 	pr_info("[RUMBA_S]  %s\n", __func__);
 
-	
+	/* Clear the 10-points calibration data */
 	memset(byte_data, 0, sizeof(byte_data));
 	byte_data[2] = 0xFF;
 	byte_data[3] = 0xFF;
@@ -1519,7 +1579,7 @@ int32_t rumbas_act_write_ois_calibration_method1(struct msm_actuator_get_ois_cal
 		return rc;
 	}
 
-	
+	/* To write the new calibration data to firmware */
 	((int16_t *)byte_data)[0] = ENDIAN(cal_info_user->x_offset);
 	((int16_t *)byte_data)[1] = ENDIAN(cal_info_user->y_offset);
 	byte_data[4] = cal_info_user->x_slope;
@@ -1548,9 +1608,9 @@ int32_t rumbas_act_write_ois_calibration_method2(struct msm_actuator_get_ois_cal
 
 	pr_info("[RUMBA_S]  %s\n", __func__);
 
-	
+	/* To write the new calibration data to firmware */
 	memset(byte_data, 0, sizeof(byte_data));
-	byte_data[0] = 0; 
+	byte_data[0] = 0; /* x direction */
 	byte_data[1] = cal_info_user->cal_current_point - 1;
 	((int16_t *)byte_data)[1] = ENDIAN(cal_info_user->x_offset);
 	((int16_t *)byte_data)[2] = ENDIAN(cal_info_user->temperature);
@@ -1561,7 +1621,7 @@ int32_t rumbas_act_write_ois_calibration_method2(struct msm_actuator_get_ois_cal
 	}
 
 	memset(byte_data, 0, sizeof(byte_data));
-	byte_data[0] = 1; 
+	byte_data[0] = 1; /* y direction */
 	byte_data[1] = cal_info_user->cal_current_point - 1;
 	((int16_t *)byte_data)[1] = ENDIAN(cal_info_user->y_offset);
 	((int16_t *)byte_data)[2] = ENDIAN(cal_info_user->temperature);
@@ -1588,7 +1648,7 @@ int32_t rumbas_act_write_ois_calibration_dump_to_flash(struct msm_actuator_get_o
 
 	pr_info("[RUMBA_S]  %s\n", __func__);
 
-	
+	/* To trigger frmware to write the new calibration data to flash */
 	memset(byte_data, 0, sizeof(byte_data));
 	byte_data[0] = 0x01;
 	byte_data[1] = 0x43;
@@ -1642,7 +1702,7 @@ int32_t rumbas_act_set_ois_calibration(struct msm_actuator_ctrl_t *a_ctrl, struc
 		rumbas_move_lens_position(lens_position);
 		msleep(1000);
 
-		
+		/* Offline Gyro Calibration -  Read data from firmware */
 		pr_info("[RUMBA_S]  %s  OIS_CAL_MODE_READ_FIRMWARE\n", __func__);
 		rumbas_act_read_cal_data();
 
@@ -1656,7 +1716,7 @@ int32_t rumbas_act_set_ois_calibration(struct msm_actuator_ctrl_t *a_ctrl, struc
 
 		memcpy(cal_info_user, &cal_info, sizeof(struct msm_actuator_get_ois_cal_info_t));
 	} else if (cal_info_user->ois_cal_mode == OIS_CAL_MODE_COLLECT_DATA) {
-		
+		/* Offline Gyro Calibration -  Collect data : 1st, 2nd, ... */
 		pr_info("[RUMBA_S]  %s  OIS_CAL_MODE_COLLECT_DATA\n", __func__);
 		interval = cal_info_user->cal_collect_interval;
 		pr_info("[RUMBA_S]  %s  interval=%d\n", __func__, interval);
@@ -1668,7 +1728,7 @@ int32_t rumbas_act_set_ois_calibration(struct msm_actuator_ctrl_t *a_ctrl, struc
 
 		memcpy(cal_info_user, &cal_info, sizeof(struct msm_actuator_get_ois_cal_info_t));
 	} else if (cal_info_user->ois_cal_mode == OIS_CAL_MODE_WRITE_FIRMWARE) {
-		
+		/* Offline Gyro Calibration -  Write data to firmware */
 		pr_info("[RUMBA_S]  %s  OIS_CAL_MODE_WRITE_FIRMWARE\n", __func__);
 		if (cal_info_user->cal_method == 0) {
 			rumbas_act_write_ois_calibration_method1(cal_info_user);
@@ -1689,6 +1749,7 @@ int32_t rumbas_act_set_ois_calibration(struct msm_actuator_ctrl_t *a_ctrl, struc
 
 	return rc;
 }
+/* HTC_END */
 
 
 static const struct i2c_device_id rumbas_act_i2c_id[] = {
@@ -1701,7 +1762,7 @@ static int rumbas_act_config(
 {
 	LINFO("%s called\n", __func__);
 	return (int) msm_actuator_config(&rumbas_act_t,
-		rumbas_msm_actuator_info, argp); 
+		rumbas_msm_actuator_info, argp); /* HTC Angie 20111212 - Rawchip */
 }
 
 static int rumbas_i2c_add_driver_table(
@@ -1737,14 +1798,18 @@ static struct i2c_driver rumbas_act_i2c_driver = {
 	},
 };
 
+/* HTC_START - for HW VCM work-around */
 static int rumbas_sysfs_init(void);
+/* HTC_END */
 
 static int __init rumbas_i2c_add_driver(
 	void)
 {
 	LINFO("%s called\n", __func__);
 
+/* HTC_START - for HW VCM work-around */
 	rumbas_sysfs_init();
+/* HTC_END */
 
 	return i2c_add_driver(rumbas_act_t.i2c_driver);
 }
@@ -1777,16 +1842,18 @@ static struct msm_actuator_ctrl_t rumbas_act_t = {
 		.a_power_down = rumbas_actuator_af_power_down,
 		.a_create_subdevice = rumbas_act_create_subdevice,
 		.a_config = rumbas_act_config,
+/* HTC_START Horng 20121105 - OIS MODE */
 		.is_ois_supported = 1,
+/* HTC_END */
 		.small_step_damping = 47,
 		.medium_step_damping = 75,
 		.big_step_damping = 100,
 		.is_af_infinity_supported = 0,
-		
+		/* HTC_START - for HW VCM work-around */
 		.do_vcm_on_cb	= rumbas_do_cam_vcm_on_cb,
 		.do_vcm_off_cb	= rumbas_do_cam_vcm_off_cb,
 		.actuator_poweroff_af = rumbas_poweroff_af,
-		
+		/* HTC_END */
 	},
 
 	.i2c_client = {
@@ -1795,15 +1862,15 @@ static struct msm_actuator_ctrl_t rumbas_act_t = {
 
 	.set_info = {
 		.total_steps = RUMBAS_TOTAL_STEPS_NEAR_TO_FAR_RAWCHIP_AF,
-		.gross_steps = 3,	
-		.fine_steps = 1,	
+		.gross_steps = 3,	/*[TBD]*/
+		.fine_steps = 1,	/*[TBD]*/
 	},
 
 	.curr_step_pos = 0,
 	.curr_region_index = 0,
-	.initial_code = 0,	
+	.initial_code = 0,	/*[TBD]*/
 	.actuator_mutex = &rumbas_act_mutex,
-	.af_algo = AF_ALGO_RAWCHIP, 
+	.af_algo = AF_ALGO_RAWCHIP, // HTC 20121004
 	.ois_ready_version = 0,
 
 	.func_tbl = {
@@ -1813,14 +1880,20 @@ static struct msm_actuator_ctrl_t rumbas_act_t = {
 		.actuator_set_default_focus = msm_actuator_set_default_focus,
 		.actuator_init_focus = rumbas_act_init_focus,
 		.actuator_i2c_write = rumbas_wrapper_i2c_write,
+/* HTC_START Horng 20121105 - OIS MODE */
 		.actuator_set_ois_mode = rumbas_act_set_ois_mode,
+/* HTC_END */
+/* HTC_START Robert 20121126 - OIS table */
 		.actuator_update_ois_tbl = rumbas_act_update_ois_tbl,
+/* HTC_END */
 		.actuator_set_af_value = rumbas_act_set_af_value,
+/* HTC_START Horng 20130118 - OIS calibration */
 		.actuator_set_ois_calibration = rumbas_act_set_ois_calibration,
+/* HTC_END */
 
 	},
 
-	.get_info = {	
+	.get_info = {	/*[TBD]*/
 		.focal_length_num = 46,
 		.focal_length_den = 10,
 		.f_number_num = 265,
@@ -1831,27 +1904,28 @@ static struct msm_actuator_ctrl_t rumbas_act_t = {
 		.total_f_dist_den = 1000,
 	},
 
-	
+	/* Initialize scenario */
 	.ringing_scenario[MOVE_NEAR] = g_scenario,
 	.scenario_size[MOVE_NEAR] = ARRAY_SIZE(g_scenario),
 	.ringing_scenario[MOVE_FAR] = g_scenario,
 	.scenario_size[MOVE_FAR] = ARRAY_SIZE(g_scenario),
 
-	
+	/* Initialize region params */
 	.region_params = g_regions,
 	.region_size = ARRAY_SIZE(g_regions),
 
-	
+	/* Initialize damping params */
 	.damping[MOVE_NEAR] = g_damping_params,
 	.damping[MOVE_FAR] = g_damping_params,
 };
 
+/* HTC_START - for HW VCM work-around */
 void rumbas_set_internal_clk(void)
 {
 	int32_t rc = 0;
 	uint8_t byte_data[8] = {0,0,0,0,0,0,0,0};
 
-	
+	/* Add protection for VCM work-around on device without main camera module */
 	if (rumbas_msm_actuator_info == NULL)
 		return;
 
@@ -1865,7 +1939,7 @@ void rumbas_set_internal_clk(void)
 
 void rumbas_disable_OIS(void)
 {
-	
+	/* Add protection for VCM work-around on device without main camera module */
 	if (rumbas_msm_actuator_info == NULL)
 		return;
 
@@ -1874,7 +1948,7 @@ void rumbas_disable_OIS(void)
 
 void rumbas_move_lens_position(int16_t next_lens_position)
 {
-	
+	/* Add protection for VCM work-around on device without main camera module */
 	if (rumbas_msm_actuator_info == NULL)
 		return;
 
@@ -1885,7 +1959,7 @@ void rumbas_move_lens_position_by_stroke(int16_t stroke)
 {
 	uint8_t byte_data[8];
 
-	
+	/* Add protection for VCM work-around on device without main camera module */
 	if (rumbas_msm_actuator_info == NULL)
 		return;
 
@@ -1898,11 +1972,13 @@ void rumbas_move_lens_position_by_stroke(int16_t stroke)
 	msm_camera_i2c_write_seq(&(rumbas_act_t.i2c_client), 0x15, &byte_data[0], 8);
 }
 
+/* HTC_START Horng 20130115 - Add OIS debug mechanism under MFG ROM by HW request */
 #if 0
 static int g_fixed_lens_position = 500;
 #else
 static int g_fixed_lens_position = ILLEGAL_CMD_INPUT_VALUE;
 #endif
+/* HTC_END */
 
 int get_fixed_lens_position(void)
 {
@@ -1935,6 +2011,7 @@ static ssize_t fixed_lens_position_show(struct device *dev,
 static DEVICE_ATTR(fixed_lens_position, S_IRUGO | S_IWUSR, fixed_lens_position_show, fixed_lens_position_store);
 
 
+/* HTC_START Horng 20130115 - Add OIS debug mechanism under MFG ROM by HW request */
 int16_t get_fixed_rx_angle(void)
 {
 	return g_fixed_rx_angle;
@@ -2185,6 +2262,7 @@ static ssize_t calibration_coefficient_show(struct device *dev,
 	return ret;
 }
 static DEVICE_ATTR(calibration_coefficient, S_IRUGO | S_IWUSR, calibration_coefficient_show, calibration_coefficient_store);
+/* HTC_END */
 
 
 static struct kobject *android_rumbas;
@@ -2209,6 +2287,7 @@ static int rumbas_sysfs_init(void)
 		kobject_del(android_rumbas);
 	}
 
+/* HTC_START Horng 20130115 - Add OIS debug mechanism under MFG ROM by HW request */
 	ret = sysfs_create_file(android_rumbas, &dev_attr_fixed_rx_angle.attr);
 	if (ret) {
 		pr_info("rumbas_sysfs_init: sysfs_create_file " \
@@ -2271,9 +2350,11 @@ static int rumbas_sysfs_init(void)
 		"failed\n");
 		kobject_del(android_rumbas);
 	}
+/* HTC_END */
 
 	return 0 ;
 }
+/* HTC_END */
 
 subsys_initcall(rumbas_i2c_add_driver);
 MODULE_DESCRIPTION("RUMBA-S actuator");

@@ -54,9 +54,11 @@ unsigned short *test_frame;
 #endif
 
 
+/*16KB*/
 #define TXN_MAX 16384
 #define RXN_MAX 4096
 
+/* number of rx requests to allocate */
 #define PROJ_RX_REQ_MAX 4
 
 #define DEFAULT_PROJ2_WIDTH			480
@@ -139,7 +141,7 @@ struct projector2_dev {
 	struct work_struct send_fb_work;
 	int start_send_fb;
 
-	
+	/* HSML Protocol Info */
 	struct hsml_protocol *hsml_proto;
 
 	u8 is_htcmode;
@@ -201,13 +203,14 @@ static struct usb_descriptor_header *hs_projector2_descs[] = {
 	NULL,
 };
 
+/* string descriptors: */
 static struct usb_string projector2_string_defs[] = {
 	[0].s = "HSML Server",
-	{  } 
+	{  } /* end of list */
 };
 
 static struct usb_gadget_strings projector2_string_table = {
-	.language =		0x0409,	
+	.language =		0x0409,	/* en-us */
 	.strings =		projector2_string_defs,
 };
 
@@ -229,7 +232,7 @@ static struct usb_request *projector2_request_new(struct usb_ep *ep, int buffer_
 	if (!req)
 		return NULL;
 
-	
+	/* now allocate buffers for the requests */
 	req->buf = kmalloc(buffer_size, GFP_KERNEL);
 	if (!req->buf) {
 		usb_ep_free_request(ep, req);
@@ -247,6 +250,7 @@ static void projector2_request_free(struct usb_request *req, struct usb_ep *ep)
 	}
 }
 
+/* add a request to the tail of a list */
 static void projector2_req_put(struct projector2_dev *dev, struct list_head *head,
 		struct usb_request *req)
 {
@@ -257,6 +261,7 @@ static void projector2_req_put(struct projector2_dev *dev, struct list_head *hea
 	spin_unlock_irqrestore(&dev->lock, flags);
 }
 
+/* remove a request from the head of a list */
 static struct usb_request *projector2_req_get(struct projector2_dev *dev, struct list_head *head)
 {
 	unsigned long flags;
@@ -279,7 +284,7 @@ static int send_hsml_header07(struct projector2_dev *dev)
 	int err;
 	static u32 seq;
 
-	
+	/* prevent seq overflow */
 	seq &= 0x0000ffff;
 	dev->header.seq = htons((u16)seq++);
 	dev->header.timestamp = htonl((u32)ktime_to_ms(ktime_get()));
@@ -319,7 +324,7 @@ static void projector2_queue_out(struct projector2_dev *dev)
 	int ret;
 	struct usb_request *req;
 
-	
+	/* if we have idle read requests, get them queued */
 	while ((req = projector2_req_get(dev, &dev->rx_idle))) {
 		req->length = RXN_MAX;
 		VDBG("%s: queue %p\n", __func__, req);
@@ -376,7 +381,7 @@ static void projector2_send_multitouch_event(struct projector2_dev *dev,
 	if (event->num_touch == 0)
 		content = NULL;
 	else {
-		
+		/* Move to point to touch data */
 		content = (struct touch_content *)(data + sizeof(struct touch_event));
 	}
 	touch2_event_func(dev, content, event->num_touch);
@@ -557,7 +562,7 @@ static int projector2_create_bulk_endpoints(struct projector2_dev *dev,
 		return -ENODEV;
 	}
 	DBG("usb_ep_autoconfig for ep_in got %s\n", ep->name);
-	ep->driver_data = dev;		
+	ep->driver_data = dev;		/* claim the endpoint */
 	dev->ep_in = ep;
 
 	ep = usb_ep_autoconfig(cdev->gadget, out_desc);
@@ -566,10 +571,10 @@ static int projector2_create_bulk_endpoints(struct projector2_dev *dev,
 		return -ENODEV;
 	}
 	DBG("usb_ep_autoconfig for projector ep_out got %s\n", ep->name);
-	ep->driver_data = dev;		
+	ep->driver_data = dev;		/* claim the endpoint */
 	dev->ep_out = ep;
 
-	
+	/* now allocate requests for our endpoints */
 	for (i = 0; i < dev->rx_req_count; i++) {
 		req = projector2_request_new(dev->ep_out, RXN_MAX);
 		if (!req)
@@ -608,20 +613,20 @@ projector2_function_bind(struct usb_configuration *c, struct usb_function *f)
 	dev->cdev = cdev;
 	DBG("%s\n", __func__);
 
-	
+	/* allocate interface ID(s) */
 	id = usb_interface_id(c, f);
 	if (id < 0)
 		return id;
 
 	projector2_interface_desc.bInterfaceNumber = id;
 
-	
+	/* allocate endpoints */
 	ret = projector2_create_bulk_endpoints(dev, &projector2_fullspeed_in_desc,
 			&projector2_fullspeed_out_desc);
 	if (ret)
 		return ret;
 
-	
+	/* support high speed hardware */
 	if (gadget_is_dualspeed(c->cdev->gadget)) {
 		projector2_highspeed_in_desc.bEndpointAddress =
 			projector2_fullspeed_in_desc.bEndpointAddress;
@@ -702,7 +707,7 @@ static int projector2_touch_init(struct projector2_dev *dev)
 	set_bit(EV_KEY,    tdev->evbit);
 	set_bit(EV_ABS,    tdev->evbit);
 
-	
+	/* Set input parameters boundary. */
 	input_set_abs_params(tdev, ABS_MT_POSITION_X, 0, x, 0, 0);
 	input_set_abs_params(tdev, ABS_MT_POSITION_Y, 0, y, 0, 0);
 	input_set_abs_params(tdev, ABS_MT_PRESSURE, 0, 1, 0, 0);

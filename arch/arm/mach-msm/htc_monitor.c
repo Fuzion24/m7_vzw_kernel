@@ -15,18 +15,25 @@
 
 unsigned int probe_seq_tx;
 
+/* Using Procfs to record log data */
 static struct proc_dir_entry *proc_mtd;
 static char *ProcBuffer;
 static int Ring=0, WritingLength;
+/*++SSD_RIL@20120110: print network packet info to kernrl log after HSIC resume*/
 static int enable_log = 0;
+/*--SSD_RIL*/
 static DEFINE_MUTEX(probe_data_mutexlock);
 
 extern void (*record_probe_data_fp)(struct sock *sk, int type, size_t size, unsigned long long t_pre);
+/*++SSD_RIL@20120110: print network packet info to kernrl log after HSIC resume*/
 #if defined(CONFIG_USB_EHCI_HCD) && defined(CONFIG_USB_EHCI_MSM_HSIC)
 extern void (*set_htc_monitor_resume_state_fp)(void);
 #endif
+/*--SSD_RIL*/
 void record_probe_data(struct sock *sk, int type, size_t size, unsigned long long t_pre);
+/*++SSD_RIL@20120110: print network packet info to kernrl log after HSIC resume*/
 void set_htc_monitor_resume_state(void);
+/*--SSD_RIL*/
 
 static void* 	log_seq_start(struct seq_file *sfile, loff_t *pos);
 static void* 	log_seq_next(struct seq_file *sfile, void *v, loff_t *pos);
@@ -51,7 +58,7 @@ static struct file_operations log_proc_ops = {
 };
 
 static struct kobject *htc_monitor_status_obj;
-static uint32_t htc_monitor_param = 0; 
+static uint32_t htc_monitor_param = 0; /* Default: disable */
 
 static ssize_t htc_monitor_param_get(struct device *dev,
                                 struct device_attribute *attr, char *buf)
@@ -74,17 +81,17 @@ static ssize_t htc_monitor_param_set(struct device *dev,
 
 	ret = strict_strtoul(buf, 10, &result);
 	if (!ret) {
-		if( result != 1) 
+		if( result != 1) /* Only allow enable */
 			return -EINVAL;
 		else {
 			htc_monitor_param = 1;
 			pr_info(" htc_monitor_param: %d\n",  htc_monitor_param);
 			record_probe_data_fp = record_probe_data;
-			
+			/*++SSD_RIL@20120110: print network packet info to kernrl log after HSIC resume*/
 #if defined(CONFIG_USB_EHCI_HCD) && defined(CONFIG_USB_EHCI_MSM_HSIC)
 			set_htc_monitor_resume_state_fp = set_htc_monitor_resume_state;
 #endif
-			
+			/*--SSD_RIL*/
 		}
 	}
 
@@ -106,12 +113,12 @@ int init_module(void)
 	memset(ProcBuffer,0,sizeof(char)*MAXDATASIZE);
 	WritingLength = 0;
 
-	
+	/* Procfs setting */
 	if( (proc_mtd = create_proc_entry("htc_monitor", 0444, NULL)) ) {
 		proc_mtd->proc_fops = &log_proc_ops;
 	}
 
-	
+	/* Attribute file setting */
 	htc_monitor_status_obj = kobject_create_and_add("htc_monitor_status", NULL);
 	if (htc_monitor_status_obj == NULL) {
 		pr_info("kobject_create_and_add: htc_monitor_status failed\n");
@@ -132,10 +139,10 @@ void cleanup_module(void)
 {
 	vfree(ProcBuffer);
 
-	
+	/* Procfs setting */
 	remove_proc_entry("htc_monitor", NULL);
 
-	
+	/* Attribute file setting */
 	if(htc_monitor_status_obj != NULL) {
 		sysfs_remove_file(htc_monitor_status_obj,
         	     &dev_attr_htc_monitor_param.attr);
@@ -186,10 +193,12 @@ static int log_proc_open(struct inode *inode, struct file *file)
 	return seq_open(file, &log_seq_ops);
 }
 
+/*++SSD_RIL@20120110: print network packet info to kernrl log after HSIC resume*/
 void set_htc_monitor_resume_state(void)
 {
 	enable_log = 1;
 }
+/*--SSD_RIL*/
 
 void record_probe_data(struct sock *sk, int type, size_t size, unsigned long long t_pre)
 {
@@ -213,7 +222,7 @@ void record_probe_data(struct sock *sk, int type, size_t size, unsigned long lon
 	daddr=inet->inet_daddr;
 	dport=inet->inet_dport;
 
-	
+	//filter
 	if (0x00000000==saddr || 0x0100007f==saddr)
 		return;
 
@@ -221,7 +230,7 @@ void record_probe_data(struct sock *sk, int type, size_t size, unsigned long lon
 
 	switch (type)
 	{
-		case 1: 
+		case 1: //send
 		{
 			unsigned long long t_diff=t_now-t_pre;
 			unsigned long nanosec_rem_diff;
@@ -245,7 +254,7 @@ void record_probe_data(struct sock *sk, int type, size_t size, unsigned long lon
 					size,(unsigned)t_diff,nanosec_rem_diff);
 			break;
 		}
-		case 2: 
+		case 2: //recv
 		{
 			unsigned long long t_diff=t_now-t_pre;
 			unsigned long nanosec_rem_diff;
@@ -269,16 +278,16 @@ void record_probe_data(struct sock *sk, int type, size_t size, unsigned long lon
 					size,(unsigned)t_diff,nanosec_rem_diff);
 			break;
 		}
-		case 3: 
+		case 3: //accept
 			snprintf(Tmp1,MAXTMPSIZE,"[%05u.%09lu] UID%05d PID%05d      ACCEPT S.IP:%03d.%03d.%03d.%03d/%05d, D.IP:%03d.%03d.%03d.%03d/%05d,              ,                \n",(unsigned)t_now,nanosec_rem,current->cred->uid,current->pid,NIPQUAD(saddr),sport,NIPQUAD(daddr),dport);
 			break;
-		case 4: 
+		case 4: //tcp connect
 			snprintf(Tmp1,MAXTMPSIZE,"[%05u.%09lu] UID%05d PID%05d TCP CONNECT S.IP:%03d.%03d.%03d.%03d/%05d, D.IP:%03d.%03d.%03d.%03d/%05d,              ,                \n",(unsigned)t_now,nanosec_rem,current->cred->uid,current->pid,NIPQUAD(saddr),sport,NIPQUAD(daddr),dport);
 			break;
-		case 5: 
+		case 5: //udp connect
 			snprintf(Tmp1,MAXTMPSIZE,"[%05u.%09lu] UID%05d PID%05d UDP CONNECT S.IP:%03d.%03d.%03d.%03d/%05d, D.IP:%03d.%03d.%03d.%03d/%05d,              ,                \n",(unsigned)t_now,nanosec_rem,current->cred->uid,current->pid,NIPQUAD(saddr),sport,NIPQUAD(daddr),dport);
 			break;
-		case 6: 
+		case 6: //close
 			snprintf(Tmp1,MAXTMPSIZE,"[%05u.%09lu] UID%05d PID%05d       CLOSE S.IP:%03d.%03d.%03d.%03d/%05d, D.IP:%03d.%03d.%03d.%03d/%05d,              ,                \n",(unsigned)t_now,nanosec_rem,current->cred->uid,current->pid,NIPQUAD(saddr),sport,NIPQUAD(daddr),dport);
 			break;
 		default:
@@ -297,12 +306,12 @@ void record_probe_data(struct sock *sk, int type, size_t size, unsigned long lon
 		memcpy(&ProcBuffer[WritingLength], Tmp1, Tmp1_len);
 		WritingLength += Tmp1_len;
 	}
-	
+	/*++SSD_RIL@20120110: print network packet info to kernrl log after HSIC resume*/
 	if ( enable_log ) {
 		enable_log = 0;
 		pr_info("[htc_monitor]%s", Tmp1);
 	}
-	
+	/*--SSD_RIL*/
 	mutex_unlock(&probe_data_mutexlock);
 	return;
 }

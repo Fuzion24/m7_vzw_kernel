@@ -13,14 +13,14 @@
 #define DOCK_STATE_THREE_POGO_DOCK		(1 << 7)
 
 #define DOCK_DET_DELAY		HZ/4
-#ifdef CONFIG_MACH_DUMMY
+#ifdef CONFIG_MACH_TC2
 #define ADC_RETRY 5
 #else
 #define ADC_RETRY 3
 #endif
 #define ADC_DELAY HZ/8
 
-#define PM8058ADC_15BIT(adc) ((adc * 2200) / 32767) 
+#define PM8058ADC_15BIT(adc) ((adc * 2200) / 32767) /* vref=2.2v, 15-bits resolution */
 
 #define CABLE_ERR(fmt, args...) \
 	printk(KERN_ERR "[CABLE:ERR] " fmt, ## args)
@@ -59,14 +59,14 @@ struct cable_detect_platform_data {
 	int vbus_mpp_gpio;
 	int vbus_mpp_irq;
 	void (*vbus_mpp_config)(void);
-	
+	/* 1 : uart, 0 : usb */
 	void (*usb_uart_switch)(int);
 	void (*usb_dpdn_switch)(int);
 
 	int ad_en_active_state;
 	int ad_en_gpio;
 	int ad_en_irq;
-	
+	/* for accessory detection */
 	u8 accessory_type;
 	u8 mfg_usb_carkit_enable;
 	int usb_id_pin_gpio;
@@ -93,6 +93,9 @@ struct cable_detect_platform_data {
 	int enable_vbus_usb_switch;
 };
 
+/* -----------------------------------------------------------------------------
+»       »       »       External routine declaration
+-----------------------------------------------------------------------------*/
 #ifdef CONFIG_FB_MSM_HDMI_MHL_SII9234
 extern void sii9234_mhl_device_wakeup(void);
 #endif

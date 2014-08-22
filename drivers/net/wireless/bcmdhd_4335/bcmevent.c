@@ -29,8 +29,11 @@
 #include <proto/bcmeth.h>
 #include <proto/bcmevent.h>
 
+/* HTC_CSP_START */
+/* Change WLC_E_LAST from 90 to 108 for BCM4335 B0 164 firmware */
 #ifndef CUSTOMER_HW2
 #if WLC_E_LAST != 203
+/* HTC_CSP_END */
 #error "You need to add an entry to bcmevent_names[] for the new event"
 #endif
 #endif
@@ -73,7 +76,7 @@ const bcmevent_name_t bcmevent_names[] = {
 	{ WLC_E_PFN_NET_LOST, "PFNLOST_IND" },
 #if defined(IBSS_PEER_DISCOVERY_EVENT)
 	{ WLC_E_IBSS_ASSOC, "IBSS_ASSOC" },
-#endif 
+#endif /* defined(IBSS_PEER_DISCOVERY_EVENT) */
 	{ WLC_E_RADIO, "RADIO" },
 	{ WLC_E_PSM_WATCHDOG, "PSM_WATCHDOG" },
 	{ WLC_E_PROBREQ_MSG, "PROBE_REQ_MSG" },
@@ -115,7 +118,7 @@ const bcmevent_name_t bcmevent_names[] = {
 #ifdef BCMWAPI_WAI
 	{ WLC_E_WAI_STA_EVENT, "WAI_STA_EVENT" },
 	{ WLC_E_WAI_MSG, "WAI_MSG" },
-#endif 
+#endif /* BCMWAPI_WAI */
 	{ WLC_E_ESCAN_RESULT, "WLC_E_ESCAN_RESULT" },
 	{ WLC_E_ACTION_FRAME_OFF_CHAN_COMPLETE, "WLC_E_AF_OFF_CHAN_COMPLETE" },
 #ifdef WLP2P
@@ -127,6 +130,7 @@ const bcmevent_name_t bcmevent_names[] = {
 #endif
 	{ WLC_E_WAKE_EVENT, "WAKE_EVENT" },
 	{ WLC_E_DCS_REQUEST, "DCS_REQUEST" },
+//	{ WLC_E_RM_COMPLETE, "RM_COMPLETE" },
 #ifdef WLMEDIA_HTSF
 	{ WLC_E_HTSFSYNC, "HTSF_SYNC_EVENT" },
 #endif
@@ -140,10 +144,13 @@ const bcmevent_name_t bcmevent_names[] = {
 #endif
 	{ WLC_E_ASSOC_REQ_IE, "ASSOC_REQ_IE" },
 	{ WLC_E_ASSOC_RESP_IE, "ASSOC_RESP_IE" },
+//	{ WLC_E_ACTION_FRAME_RX_NDIS, "WLC_E_ACTION_FRAME_RX_NDIS" },
 #ifdef WLTDLS
 	{ WLC_E_TDLS_PEER_EVENT, "TDLS_PEER_EVENT" },
-#endif 
+#endif /* WLTDLS */
+//	{ WLC_E_RELOAD, "RELOAD_EVENT" },
 	{ WLC_E_RSSI_LOW, "RSSI_LOW_EVENT" },
+//	{ WLC_E_ASSOCREQ_IE, "ASSOC_REQ_EVENT" },
 	{ WLC_E_LOAD_IND, "LOAD INDICATE EVENT" },
 	{ WLC_E_TX_STAT_ERROR, "TX_STATE_ERROR_EVENT" },
 };

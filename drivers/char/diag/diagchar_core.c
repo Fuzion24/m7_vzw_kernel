@@ -51,18 +51,24 @@ struct diagchar_dev *driver;
 struct diagchar_priv {
 	int pid;
 };
- 
-static unsigned int itemsize = 4096; 
-static unsigned int poolsize = 10; 
-static unsigned int itemsize_hdlc = 8192; 
-static unsigned int poolsize_hdlc = 8;  
-static unsigned int itemsize_write_struct = 20; 
-static unsigned int poolsize_write_struct = 8; 
+/* The following variables can be specified by module options */
+ /* for copy buffer */
+static unsigned int itemsize = 4096; /*Size of item in the mempool */
+static unsigned int poolsize = 10; /*Number of items in the mempool */
+/* for hdlc buffer */
+static unsigned int itemsize_hdlc = 8192; /*Size of item in the mempool */
+static unsigned int poolsize_hdlc = 8;  /*Number of items in the mempool */
+/* for write structure buffer */
+static unsigned int itemsize_write_struct = 20; /*Size of item in the mempool */
+static unsigned int poolsize_write_struct = 8; /* Num of items in the mempool */
+/* This is the max number of user-space clients supported at initialization*/
 static unsigned int max_clients = 15;
 static unsigned int threshold_client_limit = 30;
+/* This is the maximum number of pkt registrations supported at initialization*/
 unsigned int diag_max_reg = 600;
 unsigned int diag_threshold_reg = 750;
 
+/* Timer variables */
 static struct timer_list drain_timer;
 static int timer_in_progress;
 void *buf_hdlc;
@@ -162,8 +168,12 @@ static DEVICE_ATTR(diag9k_debug_mask, 0664,
 	show_diag_debug_mask, store_diag9k_debug_mask);
 #include "diagfwd_htc.c"
 
+/* delayed_rsp_id 0 represents no delay in the response. Any other number
+    means that the diag packet has a delayed response. */
 static uint16_t delayed_rsp_id = 1;
 #define DIAGPKT_MAX_DELAYED_RSP 0xFFFF
+/* This macro gets the next delayed respose id. Once it reaches
+ DIAGPKT_MAX_DELAYED_RSP, it stays at DIAGPKT_MAX_DELAYED_RSP */
 
 #define DIAGPKT_NEXT_DELAYED_RSP_ID(x) 				\
 ((x < DIAGPKT_MAX_DELAYED_RSP) ? x++ : DIAGPKT_MAX_DELAYED_RSP)
@@ -179,6 +189,7 @@ do {								\
 	ret += length;						\
 } while (0)
 
+/* Identifier for data from MDM */
 #define MDM_TOKEN	-1
 
 static void drain_timer_func(unsigned long data)
@@ -195,7 +206,7 @@ void diag_drain_work_fn(struct work_struct *work)
 	if (buf_hdlc) {
 		err = diag_device_write(buf_hdlc, APPS_DATA, NULL);
 		if (err) {
-			
+			/*Free the buffer right away if write failed */
 			diagmem_free(driver, buf_hdlc, POOL_TYPE_HDLC);
 			diagmem_free(driver, (unsigned char *)driver->
 				 write_ptr_svc, POOL_TYPE_WRITE_STRUCT);
@@ -218,7 +229,7 @@ void diag_clear_hsic_tbl(void)
 	driver->num_hsic_buf_tbl_entries = 0;
 	for (i = 0; i < driver->poolsize_hsic_write; i++) {
 		if (driver->hsic_buf_tbl[i].buf) {
-			
+			/* Return the buffer to the pool */
 			diagmem_free(driver, (unsigned char *)
 				(driver->hsic_buf_tbl[i].buf),
 				POOL_TYPE_HSIC);
@@ -336,6 +347,10 @@ static int diagchar_close(struct inode *inode, struct file *file)
 		pr_alert("diag: Invalid file pointer");
 		return -ENOMEM;
 	}
+	/* clean up any DCI registrations, if this is a DCI client
+	* This will specially help in case of ungraceful exit of any DCI client
+	* This call will remove any pending registrations of such client
+	*/
 	for (i = 0; i < MAX_DCI_CLIENTS; i++) {
 		if (driver->dci_client_tbl[i].client &&
 			driver->dci_client_tbl[i].client->tgid ==
@@ -344,7 +359,7 @@ static int diagchar_close(struct inode *inode, struct file *file)
 			break;
 		}
 	}
-	
+	/* If the exiting process is the socket process */
 	if (driver->socket_process &&
 		(driver->socket_process->tgid == current->tgid)) {
 		driver->socket_process = NULL;
@@ -355,7 +370,7 @@ static int diagchar_close(struct inode *inode, struct file *file)
 	}
 
 #ifdef CONFIG_DIAG_OVER_USB
-	
+	/* If the SD logging process exits, change logging to USB mode */
 	if (driver->logging_process_id == current->tgid) {
 		driver->logging_mode = USB_MODE;
 		diagfwd_connect();
@@ -365,8 +380,8 @@ static int diagchar_close(struct inode *inode, struct file *file)
 		diagfwd_connect_bridge(0);
 #endif
 	}
-#endif 
-	
+#endif /* DIAG over USB */
+	/* Delete the pkt response table entry for the exiting process */
 	for (i = 0; i < diag_max_reg; i++)
 			if (driver->table[i].process_id == current->tgid)
 					driver->table[i].process_id = 0;
@@ -374,7 +389,7 @@ static int diagchar_close(struct inode *inode, struct file *file)
 	if (driver) {
 		mutex_lock(&driver->diagchar_mutex);
 		driver->ref_count--;
-		
+		/* On Client exit, try to destroy all 3 pools */
 		diagmem_exit(driver, POOL_TYPE_COPY);
 		diagmem_exit(driver, POOL_TYPE_HDLC);
 		diagmem_exit(driver, POOL_TYPE_WRITE_STRUCT);
@@ -421,14 +436,14 @@ void diag_clear_reg(int proc_num)
 	int i;
 
 	mutex_lock(&driver->diagchar_mutex);
-	
+	/* reset polling flag */
 	driver->polling_reg_flag = 0;
 	for (i = 0; i < diag_max_reg; i++) {
 		if (driver->table[i].client_id == proc_num) {
 			driver->table[i].process_id = 0;
 		}
 	}
-	
+	/* re-scan the registration table */
 	for (i = 0; i < diag_max_reg; i++) {
 		if (diag_find_polling_reg(i) == 1) {
 			driver->polling_reg_flag = 1;
@@ -447,7 +462,7 @@ void diag_add_reg(int j, struct bindpkt_params *params,
 	driver->table[j].cmd_code_lo = params->cmd_code_lo;
 	driver->table[j].cmd_code_hi = params->cmd_code_hi;
 
-	
+	/* check if incoming reg is polling & polling is yet not registered */
 	if (driver->polling_reg_flag == 0)
 		if (diag_find_polling_reg(j) == 1)
 			driver->polling_reg_flag = 1;
@@ -531,7 +546,7 @@ long diagchar_ioctl(struct file *filp,
 			}
 		}
 		if (i < diag_threshold_reg) {
-			
+			/* Increase table size by amount required */
 			if (pkt_params.count >= count_entries) {
 				interim_count = pkt_params.count -
 							 count_entries;
@@ -550,7 +565,7 @@ long diagchar_ioctl(struct file *filp,
 				mutex_unlock(&driver->diagchar_mutex);
 				return -EFAULT;
 			}
-			
+			/* Make sure size doesnt go beyond threshold */
 			if (diag_max_reg > diag_threshold_reg) {
 				diag_max_reg = diag_threshold_reg;
 				pr_info("diag: best case memory allocation\n");
@@ -680,7 +695,7 @@ long diagchar_ioctl(struct file *filp,
 		return driver->dci_client_id;
 	} else if (iocmd == DIAG_IOCTL_DCI_DEINIT) {
 		success = -1;
-		
+		/* Delete this process from DCI table */
 		mutex_lock(&driver->dci_mutex);
 		for (i = 0; i < dci_max_reg; i++)
 			if (driver->req_tracking_tbl[i].pid == current->tgid)
@@ -754,6 +769,10 @@ long diagchar_ioctl(struct file *filp,
 			diag_clear_hsic_tbl();
 			driver->mask_check = 1;
 			if (driver->socket_process) {
+				/*
+				 * Notify the socket logging process that we
+				 * are switching to MEMORY_DEVICE_MODE
+				 */
 				status = send_sig(SIGCONT,
 					 driver->socket_process, 0);
 				if (status) {
@@ -800,7 +819,7 @@ long diagchar_ioctl(struct file *filp,
 			driver->in_busy_lpass_2 = 0;
 			driver->in_busy_wcnss_1 = 0;
 			driver->in_busy_wcnss_2 = 0;
-			
+			/* Poll SMD channels to check for data*/
 			if (driver->ch)
 				queue_work(driver->diag_wq,
 					&(driver->diag_read_smd_work));
@@ -812,7 +831,7 @@ long diagchar_ioctl(struct file *filp,
 					&(driver->diag_read_smd_wcnss_work));
 #ifdef CONFIG_DIAG_SDIO_PIPE
 			driver->in_busy_sdio = 0;
-			
+			/* Poll SDIO channel to check for data */
 			if (driver->sdio_ch)
 				queue_work(driver->diag_sdio_wq,
 					&(driver->diag_read_sdio_work));
@@ -846,7 +865,7 @@ long diagchar_ioctl(struct file *filp,
 			driver->in_busy_wcnss_1 = 0;
 			driver->in_busy_wcnss_2 = 0;
 
-			
+			/* Poll SMD channels to check for data*/
 			if (driver->ch)
 				queue_work(driver->diag_wq,
 					 &(driver->diag_read_smd_work));
@@ -858,7 +877,7 @@ long diagchar_ioctl(struct file *filp,
 					&(driver->diag_read_smd_wcnss_work));
 #ifdef CONFIG_DIAG_SDIO_PIPE
 			driver->in_busy_sdio = 0;
-			
+			/* Poll SDIO channel to check for data */
 			if (driver->sdio_ch)
 				queue_work(driver->diag_sdio_wq,
 					&(driver->diag_read_sdio_work));
@@ -878,7 +897,7 @@ long diagchar_ioctl(struct file *filp,
 #endif
 			driver->qxdm2sd_drop = 1;
 		}
-#endif 
+#endif /* DIAG over USB */
 		success = 1;
 	} else if (iocmd == DIAG_IOCTL_REMOTE_DEV) {
 		uint16_t remote_dev = diag_get_remote_device_mask();
@@ -952,10 +971,10 @@ static int diagchar_read(struct file *file, char __user *buf, size_t count,
 #endif
 
 		pr_debug("diag: process woken up\n");
-		
+		/*Copy the type of data being passed*/
 		data_type = driver->data_ready[index] & USER_SPACE_DATA_TYPE;
 		COPY_USER_SPACE_OR_EXIT(buf, data_type, 4);
-		
+		/* place holder for number of data field */
 		ret += 4;
 
 		for (i = 0; i < driver->poolsize_write_struct; i++) {
@@ -967,7 +986,7 @@ static int diagchar_read(struct file *file, char __user *buf, size_t count,
 					driver->buf_tbl[i].length);
 #endif
 				num_data++;
-				
+				/* Copy the length of data being passed */
 				if (copy_to_user(buf+ret, (void *)&(driver->
 						buf_tbl[i].length), 4)) {
 						num_data--;
@@ -975,7 +994,7 @@ static int diagchar_read(struct file *file, char __user *buf, size_t count,
 				}
 				ret += 4;
 
-				
+				/* Copy the actual data being passed */
 				if (copy_to_user(buf+ret, (void *)driver->
 				buf_tbl[i].buf, driver->buf_tbl[i].length)) {
 					ret -= 4;
@@ -997,13 +1016,13 @@ drop:
 			}
 		}
 
-		
+		/* copy modem data */
 		if (driver->in_busy_1 == 1) {
 			num_data++;
-			
+			/*Copy the length of data being passed*/
 			COPY_USER_SPACE_OR_EXIT(buf+ret,
 					 (driver->write_ptr_1->length), 4);
-			
+			/*Copy the actual data being passed*/
 			COPY_USER_SPACE_OR_EXIT(buf+ret,
 					*(driver->buf_in_1),
 					 driver->write_ptr_1->length);
@@ -1011,22 +1030,22 @@ drop:
 		}
 		if (driver->in_busy_2 == 1) {
 			num_data++;
-			
+			/*Copy the length of data being passed*/
 			COPY_USER_SPACE_OR_EXIT(buf+ret,
 					 (driver->write_ptr_2->length), 4);
-			
+			/*Copy the actual data being passed*/
 			COPY_USER_SPACE_OR_EXIT(buf+ret,
 					 *(driver->buf_in_2),
 					 driver->write_ptr_2->length);
 			driver->in_busy_2 = 0;
 		}
-		
+		/* copy lpass data */
 		if (driver->in_busy_lpass_1 == 1) {
 			num_data++;
-			
+			/*Copy the length of data being passed*/
 			COPY_USER_SPACE_OR_EXIT(buf+ret,
 				 (driver->write_ptr_lpass_1->length), 4);
-			
+			/*Copy the actual data being passed*/
 			COPY_USER_SPACE_OR_EXIT(buf+ret, *(driver->
 							buf_in_lpass_1),
 					 driver->write_ptr_lpass_1->length);
@@ -1034,22 +1053,22 @@ drop:
 		}
 		if (driver->in_busy_lpass_2 == 1) {
 			num_data++;
-			
+			/*Copy the length of data being passed*/
 			COPY_USER_SPACE_OR_EXIT(buf+ret,
 				 (driver->write_ptr_lpass_2->length), 4);
-			
+			/*Copy the actual data being passed*/
 			COPY_USER_SPACE_OR_EXIT(buf+ret, *(driver->
 				buf_in_lpass_2), driver->
 					write_ptr_lpass_2->length);
 			driver->in_busy_lpass_2 = 0;
 		}
-		
+		/* copy wncss data */
 		if (driver->in_busy_wcnss_1 == 1) {
 			num_data++;
-			
+			/*Copy the length of data being passed*/
 			COPY_USER_SPACE_OR_EXIT(buf+ret,
 				 (driver->write_ptr_wcnss_1->length), 4);
-			
+			/*Copy the actual data being passed*/
 			COPY_USER_SPACE_OR_EXIT(buf+ret, *(driver->
 							buf_in_wcnss_1),
 					 driver->write_ptr_wcnss_1->length);
@@ -1057,25 +1076,25 @@ drop:
 		}
 		if (driver->in_busy_wcnss_2 == 1) {
 			num_data++;
-			
+			/*Copy the length of data being passed*/
 			COPY_USER_SPACE_OR_EXIT(buf+ret,
 				 (driver->write_ptr_wcnss_2->length), 4);
-			
+			/*Copy the actual data being passed*/
 			COPY_USER_SPACE_OR_EXIT(buf+ret, *(driver->
 							buf_in_wcnss_2),
 					 driver->write_ptr_wcnss_2->length);
 			driver->in_busy_wcnss_2 = 0;
 		}
 #ifdef CONFIG_DIAG_SDIO_PIPE
-		
+		/* copy 9K data over SDIO */
 		if (driver->in_busy_sdio == 1) {
 			num_data++;
-			
+			/*Copy the negative  token of data being passed*/
 			COPY_USER_SPACE_OR_EXIT(buf+ret, mdm_token, 4);
-			
+			/*Copy the length of data being passed*/
 			COPY_USER_SPACE_OR_EXIT(buf+ret,
 				 (driver->write_ptr_mdm->length), 4);
-			
+			/*Copy the actual data being passed*/
 			COPY_USER_SPACE_OR_EXIT(buf+ret,
 					*(driver->buf_in_sdio),
 					 driver->write_ptr_mdm->length);
@@ -1102,14 +1121,14 @@ drop:
 					hsic_buf_tbl[i].length);
 				num_data++;
 
-				
+				/* Copy the negative token */
 				if (copy_to_user(buf+ret, &mdm_token, 4)) {
 					num_data--;
 					goto drop_hsic;
 				}
 				ret += 4;
 
-				
+				/* Copy the length of data being passed */
 				if (copy_to_user(buf+ret,
 					(void *)&(hsic_buf_tbl[i].length),
 					4)) {
@@ -1118,7 +1137,7 @@ drop:
 				}
 				ret += 4;
 
-				
+				/* Copy the actual data being passed */
 				if (copy_to_user(buf+ret,
 						(void *)hsic_buf_tbl[i].buf,
 						hsic_buf_tbl[i].length)) {
@@ -1128,24 +1147,24 @@ drop:
 				}
 				ret += hsic_buf_tbl[i].length;
 drop_hsic_1:
-				
+				/* Return the buffer to the pool */
 				diagmem_free(driver,
 					(unsigned char *)(hsic_buf_tbl[i].buf),
 					POOL_TYPE_HSIC);
 
-				
+				/* Call the write complete function */
 				diagfwd_write_complete_hsic(NULL);
 			}
 		}
 		if (driver->in_busy_smux == 1) {
 			num_data++;
 
-			
+			/* Copy the negative  token of data being passed */
 			COPY_USER_SPACE_OR_EXIT(buf+ret, mdm_token, 4);
-			
+			/* Copy the length of data being passed */
 			COPY_USER_SPACE_OR_EXIT(buf+ret,
 					(driver->write_ptr_mdm->length), 4);
-			
+			/* Copy the actual data being passed */
 			COPY_USER_SPACE_OR_EXIT(buf+ret,
 					*(driver->buf_in_smux),
 					driver->write_ptr_mdm->length);
@@ -1153,7 +1172,7 @@ drop_hsic_1:
 			driver->in_busy_smux = 0;
 		}
 #endif
-		
+		/* copy number of data fields */
 		COPY_USER_SPACE_OR_EXIT(buf+4, num_data, 4);
 		ret -= 4;
 		driver->data_ready[index] ^= USER_SPACE_DATA_TYPE;
@@ -1174,6 +1193,8 @@ drop_hsic_1:
 		APPEND_DEBUG('n');
 		goto exit;
 	} else if (driver->data_ready[index] & USER_SPACE_DATA_TYPE) {
+		/* In case, the thread wakes up and the logging mode is
+		not memory device any more, the condition needs to be cleared */
 		driver->data_ready[index] ^= USER_SPACE_DATA_TYPE;
 	} else if (driver->data_ready[index] & USERMODE_DIAGFWD) {
 		data_type = USERMODE_DIAGFWD_LEGACY;
@@ -1201,7 +1222,7 @@ drop_hsic_1:
 #endif
 				#if 0
 				num_data++;
-				
+				/* Copy the length of data being passed */
 				if (copy_to_user(buf+ret, (void *)&(driver->
 						buf_tbl[i].length), 4)) {
 						num_data--;
@@ -1210,7 +1231,7 @@ drop_hsic_1:
 				ret += 4;
 				#endif
 
-				
+				/* Copy the actual data being passed */
 				if (copy_to_user(buf+ret, (void *)driver->
 				buf_tbl[i].buf, driver->buf_tbl[i].length))
 					break;
@@ -1224,46 +1245,46 @@ drop_hsic_1:
 			}
 		}
 
-		
+		/* copy modem data */
 		if (driver->in_busy_1 == 1) {
-			
+			/*Copy the actual data being passed*/
 			COPY_USER_SPACE_OR_EXIT(buf+ret,
 					*(driver->buf_in_1),
 					 driver->write_ptr_1->length);
 			driver->in_busy_1 = 0;
 		}
 		if (driver->in_busy_2 == 1) {
-			
+			/*Copy the actual data being passed*/
 			COPY_USER_SPACE_OR_EXIT(buf+ret,
 					 *(driver->buf_in_2),
 					 driver->write_ptr_2->length);
 			driver->in_busy_2 = 0;
 		}
-		
+		/* copy lpass data */
 		if (driver->in_busy_lpass_1 == 1) {
-			
+			/*Copy the actual data being passed*/
 			COPY_USER_SPACE_OR_EXIT(buf+ret, *(driver->
 							buf_in_lpass_1),
 					 driver->write_ptr_lpass_1->length);
 			driver->in_busy_lpass_1 = 0;
 		}
 		if (driver->in_busy_lpass_2 == 1) {
-			
+			/*Copy the actual data being passed*/
 			COPY_USER_SPACE_OR_EXIT(buf+ret, *(driver->
 				buf_in_lpass_2), driver->
 					write_ptr_lpass_2->length);
 			driver->in_busy_lpass_2 = 0;
 		}
-		
+		/* copy wncss data */
 		if (driver->in_busy_wcnss_1 == 1) {
-			
+			/*Copy the actual data being passed*/
 			COPY_USER_SPACE_OR_EXIT(buf+ret, *(driver->
 							buf_in_wcnss_1),
 					 driver->write_ptr_wcnss_1->length);
 			driver->in_busy_wcnss_1 = 0;
 		}
 		if (driver->in_busy_wcnss_2 == 1) {
-			
+			/*Copy the actual data being passed*/
 			COPY_USER_SPACE_OR_EXIT(buf+ret, *(driver->
 							buf_in_wcnss_2),
 					 driver->write_ptr_wcnss_2->length);
@@ -1287,7 +1308,7 @@ drop_hsic_1:
 	}
 
 	if (driver->data_ready[index] & DEINIT_TYPE) {
-		
+		/*Copy the type of data being passed*/
 		data_type = driver->data_ready[index] & DEINIT_TYPE;
 		COPY_USER_SPACE_OR_EXIT(buf, data_type, 4);
 		driver->data_ready[index] ^= DEINIT_TYPE;
@@ -1295,7 +1316,7 @@ drop_hsic_1:
 	}
 
 	if (driver->data_ready[index] & MSG_MASKS_TYPE) {
-		
+		/*Copy the type of data being passed*/
 		data_type = driver->data_ready[index] & MSG_MASKS_TYPE;
 		COPY_USER_SPACE_OR_EXIT(buf, data_type, 4);
 		COPY_USER_SPACE_OR_EXIT(buf+4, *(driver->msg_masks),
@@ -1305,7 +1326,7 @@ drop_hsic_1:
 	}
 
 	if (driver->data_ready[index] & EVENT_MASKS_TYPE) {
-		
+		/*Copy the type of data being passed*/
 		data_type = driver->data_ready[index] & EVENT_MASKS_TYPE;
 		COPY_USER_SPACE_OR_EXIT(buf, data_type, 4);
 		COPY_USER_SPACE_OR_EXIT(buf+4, *(driver->event_masks),
@@ -1315,7 +1336,7 @@ drop_hsic_1:
 	}
 
 	if (driver->data_ready[index] & LOG_MASKS_TYPE) {
-		
+		/*Copy the type of data being passed*/
 		data_type = driver->data_ready[index] & LOG_MASKS_TYPE;
 		COPY_USER_SPACE_OR_EXIT(buf, data_type, 4);
 		COPY_USER_SPACE_OR_EXIT(buf+4, *(driver->log_masks),
@@ -1325,7 +1346,7 @@ drop_hsic_1:
 	}
 
 	if (driver->data_ready[index] & PKT_TYPE) {
-		
+		/*Copy the type of data being passed*/
 		data_type = driver->data_ready[index] & PKT_TYPE;
 		COPY_USER_SPACE_OR_EXIT(buf, data_type, 4);
 		COPY_USER_SPACE_OR_EXIT(buf+4, *(driver->pkt_buf),
@@ -1335,10 +1356,10 @@ drop_hsic_1:
 	}
 
 	if (driver->data_ready[index] & DCI_DATA_TYPE) {
-		
+		/* Copy the type of data being passed */
 		data_type = driver->data_ready[index] & DCI_DATA_TYPE;
 		COPY_USER_SPACE_OR_EXIT(buf, data_type, 4);
-		
+		/* check the current client and copy its data */
 		for (i = 0; i < MAX_DCI_CLIENTS; i++) {
 			if (driver->dci_client_tbl[i].client != NULL) {
 				entry = &(driver->dci_client_tbl[i]);
@@ -1387,13 +1408,13 @@ static int diagchar_write(struct file *file, const char __user *buf,
 #ifdef CONFIG_DIAG_OVER_USB
 	if (((driver->logging_mode == USB_MODE) && (!driver->usb_connected)) ||
 				(driver->logging_mode == NO_LOGGING_MODE)) {
-		
+		/*Drop the diag payload */
 		return -EIO;
 	}
-#endif 
-	
+#endif /* DIAG over USB */
+	/* Get the packet type F3/log/event/Pkt response */
 	err = copy_from_user((&pkt_type), buf, 4);
-	
+	/* First 4 bytes indicate the type of payload - ignore these */
 	if (count < 4) {
 		pr_err("diag: Client sending short data\n");
 		return -EBADMSG;
@@ -1426,7 +1447,7 @@ static int diagchar_write(struct file *file, const char __user *buf,
 					" to modem(first 16 bytes)", 16, 1,
 					DUMP_PREFIX_ADDRESS, driver->user_space_data, 16, 1);
 		}
-		
+		/* Check for proc_type */
 		if (*(int *)driver->user_space_data == MDM_TOKEN) {
 			remote_data = true;
 			token_offset = 4;
@@ -1434,7 +1455,7 @@ static int diagchar_write(struct file *file, const char __user *buf,
 			buf += 4;
 		}
 
-		
+		/* Check masks for On-Device logging */
 		if (driver->mask_check) {
 			if (!mask_request_validate(driver->user_space_data +
 							 token_offset)) {
@@ -1450,7 +1471,7 @@ static int diagchar_write(struct file *file, const char __user *buf,
 						+ token_offset)+i));
 #endif
 #ifdef CONFIG_DIAG_SDIO_PIPE
-		
+		/* send masks to 9k too */
 		if (driver->sdio_ch && remote_data) {
 			wait_event_interruptible(driver->wait_q,
 				 (sdio_write_avail(driver->sdio_ch) >=
@@ -1463,9 +1484,9 @@ static int diagchar_write(struct file *file, const char __user *buf,
 		}
 #endif
 #if defined(CONFIG_DIAGFWD_BRIDGE_CODE) && defined(CONFIG_DIAG_HSIC_ON_LEGACY)
-		
+		/* send masks to 9k too */
 		if (driver->hsic_ch && (payload_size > 0) && remote_data) {
-			
+			/* wait sending mask updates if HSIC ch not ready */
 			if (driver->in_busy_hsic_write)
 				wait_event_interruptible(driver->wait_q,
 					(driver->in_busy_hsic_write != 1));
@@ -1477,6 +1498,12 @@ static int diagchar_write(struct file *file, const char __user *buf,
 			if (err) {
 				pr_err("diag: err sending mask to MDM: %d\n",
 									 err);
+				/*
+				* If the error is recoverable, then clear
+				* the write flag, so we will resubmit a
+				* write on the next frame.  Otherwise, don't
+				* resubmit a write on the next frame.
+				*/
 				if ((-ESHUTDOWN) != err)
 					driver->in_busy_hsic_write = 0;
 			}
@@ -1495,7 +1522,7 @@ static int diagchar_write(struct file *file, const char __user *buf,
 			}
 		}
 #endif
-		
+		/* send masks to 8k now */
 		if (!remote_data)
 			diag_process_hdlc((void *)
 				(driver->user_space_data + token_offset),
@@ -1568,7 +1595,7 @@ static int diagchar_write(struct file *file, const char __user *buf,
 	if (HDLC_OUT_BUF_SIZE - driver->used <= (2*payload_size) + 3) {
 		err = diag_device_write(buf_hdlc, APPS_DATA, NULL);
 		if (err) {
-			
+			/*Free the buffer right away if write failed */
 			diagmem_free(driver, buf_hdlc, POOL_TYPE_HDLC);
 			if (driver->logging_mode == USB_MODE)
 				diagmem_free(driver, (unsigned char *)driver->
@@ -1590,11 +1617,14 @@ static int diagchar_write(struct file *file, const char __user *buf,
 	enc.dest_last = (void *)(buf_hdlc + driver->used + 2*payload_size + 3);
 	diag_hdlc_encode(&send, &enc);
 
+	/* This is to check if after HDLC encoding, we are still within the
+	 limits of aggregation buffer. If not, we write out the current buffer
+	and start aggregation in a newly allocated buffer */
 	if ((unsigned int) enc.dest >=
 		 (unsigned int)(buf_hdlc + HDLC_OUT_BUF_SIZE)) {
 		err = diag_device_write(buf_hdlc, APPS_DATA, NULL);
 		if (err) {
-			
+			/*Free the buffer right away if write failed */
 			diagmem_free(driver, buf_hdlc, POOL_TYPE_HDLC);
 			if (driver->logging_mode == USB_MODE)
 				diagmem_free(driver, (unsigned char *)driver->
@@ -1620,7 +1650,7 @@ static int diagchar_write(struct file *file, const char __user *buf,
 	if (pkt_type == DATA_TYPE_RESPONSE) {
 		err = diag_device_write(buf_hdlc, APPS_DATA, NULL);
 		if (err) {
-			
+			/*Free the buffer right away if write failed */
 			diagmem_free(driver, buf_hdlc, POOL_TYPE_HDLC);
 			if (driver->logging_mode == USB_MODE)
 				diagmem_free(driver, (unsigned char *)driver->
@@ -1663,30 +1693,30 @@ int mask_request_validate(unsigned char mask_buf[])
 	if (packet_id == 0x4B) {
 		subsys_id = mask_buf[1];
 		ss_cmd = *(uint16_t *)(mask_buf + 2);
-		
+		/* Packets with SSID which are allowed */
 		switch (subsys_id) {
-		case 0x04: 
+		case 0x04: /* DIAG_SUBSYS_WCDMA */
 			if ((ss_cmd == 0) || (ss_cmd == 0xF))
 				return 1;
 			break;
-		case 0x08: 
+		case 0x08: /* DIAG_SUBSYS_GSM */
 			if ((ss_cmd == 0) || (ss_cmd == 0x1))
 				return 1;
 			break;
-		case 0x09: 
-		case 0x0F: 
+		case 0x09: /* DIAG_SUBSYS_UMTS */
+		case 0x0F: /* DIAG_SUBSYS_CM */
 			if (ss_cmd == 0)
 				return 1;
 			break;
-		case 0x0C: 
+		case 0x0C: /* DIAG_SUBSYS_OS */
 			if ((ss_cmd == 2) || (ss_cmd == 0x100))
-				return 1; 
+				return 1; /* MPU and APU */
 			break;
-		case 0x12: 
+		case 0x12: /* DIAG_SUBSYS_DIAG_SERV */
 			if ((ss_cmd == 0) || (ss_cmd == 0x6) || (ss_cmd == 0x7))
 				return 1;
 			break;
-		case 0x13: 
+		case 0x13: /* DIAG_SUBSYS_FS */
 			if ((ss_cmd == 0) || (ss_cmd == 0x1))
 				return 1;
 			break;
@@ -1696,17 +1726,17 @@ int mask_request_validate(unsigned char mask_buf[])
 		}
 	} else {
 		switch (packet_id) {
-		case 0x00:    
-		case 0x0C:    
-		case 0x1C:    
-		case 0x1D:    
-		case 0x60:    
-		case 0x63:    
-		case 0x73:    
-		case 0x7C:    
-		case 0x7D:    
-		case 0x81:    
-		case 0x82:    
+		case 0x00:    /* Version Number */
+		case 0x0C:    /* CDMA status packet */
+		case 0x1C:    /* Diag Version */
+		case 0x1D:    /* Time Stamp */
+		case 0x60:    /* Event Report Control */
+		case 0x63:    /* Status snapshot */
+		case 0x73:    /* Logging Configuration */
+		case 0x7C:    /* Extended build ID */
+		case 0x7D:    /* Extended Message configuration */
+		case 0x81:    /* Event get mask */
+		case 0x82:    /* Set the event mask */
 			return 1;
 			break;
 		default:
@@ -1787,7 +1817,7 @@ static int diagchar_cleanup(void)
 		current->comm, current->parent->comm, current->tgid);
 	if (driver) {
 		if (driver->cdev) {
-			
+			/* TODO - Check if device exists before deleting */
 			device_destroy(driver->diagchar_class,
 				       MKDEV(driver->major,
 					     driver->minor_start));
@@ -1923,7 +1953,7 @@ static int __init diagchar_init(void)
 #endif
 		wake_lock_init(&driver->wake_lock, WAKE_LOCK_SUSPEND, "diagchar");
 
-		
+		/* Get major number from kernel and initialize */
 		error = alloc_chrdev_region(&dev, driver->minor_start,
 					    driver->num, driver->name);
 		if (!error) {
@@ -1959,6 +1989,8 @@ fail:
 static void diagchar_exit(void)
 {
 	printk(KERN_INFO "diagchar exiting ..\n");
+	/* On Driver exit, send special pool type to
+	 ensure no memory leaks */
 	diagmem_exit(driver, POOL_TYPE_ALL);
 	diagfwd_exit();
 	diagfwd_cntl_exit();

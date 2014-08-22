@@ -18,6 +18,7 @@
 #include "kgsl_device.h"
 #include "kgsl_sharedmem.h"
 
+/*default log levels is error for everything*/
 #define KGSL_LOG_LEVEL_DEFAULT 3
 #define KGSL_LOG_LEVEL_MAX     7
 
@@ -173,7 +174,7 @@ void kgsl_device_debugfs_init(struct kgsl_device *device)
 	debugfs_create_file("contexpid_dump",  0644, device->d_debugfs, device,
 				&ctx_dump_fops);
 #endif
-	
+	/* Create postmortem dump control files */
 
 	pm_d_debugfs = debugfs_create_dir("postmortem", device->d_debugfs);
 

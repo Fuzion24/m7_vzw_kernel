@@ -206,21 +206,23 @@ typedef BWL_PRE_PACKED_STRUCT struct bcm_event {
 #define WLC_E_P2PO_ADD_DEVICE           105     
 #define WLC_E_P2PO_DEL_DEVICE           106     
 
+/* HTC_CSP_START */
 #ifdef CUSTOMER_HW2
 #if defined(BCM4335_CHIP)
 #define WLC_E_HTC_OFFSET                200
-#define WLC_E_RSSI_LOW                  WLC_E_HTC_OFFSET + 0    
-#define WLC_E_LOAD_IND                  WLC_E_HTC_OFFSET + 1    
-#define WLC_E_TX_STAT_ERROR             WLC_E_HTC_OFFSET + 2    
-#define WLC_E_LAST                      WLC_E_HTC_OFFSET + 3    
+#define WLC_E_RSSI_LOW                  WLC_E_HTC_OFFSET + 0    /* Send up rssi low event */
+#define WLC_E_LOAD_IND                  WLC_E_HTC_OFFSET + 1    /* loading incicate */
+#define WLC_E_TX_STAT_ERROR             WLC_E_HTC_OFFSET + 2    /* tx error indicate */
+#define WLC_E_LAST                      WLC_E_HTC_OFFSET + 3    /* highest val + 1 for range checking */
 #elif defined(BCM4334_CHIP)
-#define WLC_E_RSSI_LOW			87      
-#define WLC_E_LOAD_IND			88	
-#define WLC_E_TX_STAT_ERROR     	89      
-#define WLC_E_LAST			90	
+#define WLC_E_RSSI_LOW			87      /* Send up rssi low event */
+#define WLC_E_LOAD_IND			88	/* loading incicate */
+#define WLC_E_TX_STAT_ERROR     	89      /* tx error indicate */
+#define WLC_E_LAST			90	/* highest val + 1 for range checking */
 #else
 #define WLC_E_LAST			107	
 #endif
+/* HTC_CSP_END */
 #endif
 
 typedef struct {
@@ -354,7 +356,7 @@ typedef struct wl_event_data_if {
 #define WLC_E_TDLS_PEER_CONNECTED		1
 #define WLC_E_TDLS_PEER_DISCONNECTED	2
 
-#define WLC_E_RELOAD_STATUS1            1  
+#define WLC_E_RELOAD_STATUS1            1  /* Internal Firmware Error */
 
 #include <packed_section_end.h>
 

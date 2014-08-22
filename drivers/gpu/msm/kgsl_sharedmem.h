@@ -81,12 +81,23 @@ int kgsl_sharedmem_init_sysfs(void);
 void kgsl_sharedmem_init_ion(void);
 void kgsl_sharedmem_uninit_sysfs(void);
 
+/*
+ * kgsl_memdesc_get_align - Get alignment flags from a memdesc
+ * @memdesc - the memdesc
+ *
+ * Returns the alignment requested, as power of 2 exponent.
+ */
 static inline int
 kgsl_memdesc_get_align(const struct kgsl_memdesc *memdesc)
 {
 	return (memdesc->flags & KGSL_MEMALIGN_MASK) >> KGSL_MEMALIGN_SHIFT;
 }
 
+/*
+ * kgsl_memdesc_set_align - Set alignment flags of a memdesc
+ * @memdesc - the memdesc
+ * @align - alignment requested, as a power of 2 exponent.
+ */
 static inline int
 kgsl_memdesc_set_align(struct kgsl_memdesc *memdesc, unsigned int align)
 {
@@ -102,6 +113,10 @@ kgsl_memdesc_set_align(struct kgsl_memdesc *memdesc, unsigned int align)
 
 static inline unsigned int kgsl_get_sg_pa(struct scatterlist *sg)
 {
+	/*
+	 * Try sg_dma_address first to support ion carveout
+	 * regions which do not work with sg_phys().
+	 */
 	unsigned int pa = sg_dma_address(sg);
 	if (pa == 0)
 		pa = sg_phys(sg);
@@ -112,6 +127,12 @@ int
 kgsl_sharedmem_map_vma(struct vm_area_struct *vma,
 			const struct kgsl_memdesc *memdesc);
 
+/*
+ * For relatively small sglists, it is preferable to use kzalloc
+ * rather than going down the vmalloc rat hole.  If the size of
+ * the sglist is < PAGE_SIZE use kzalloc otherwise fallback to
+ * vmalloc
+ */
 
 static inline void *kgsl_sg_alloc(unsigned int sglen)
 {
@@ -219,4 +240,4 @@ static inline int kgsl_sg_size(struct scatterlist *sg, int sglen)
 
 	return size;
 }
-#endif 
+#endif /* __KGSL_SHAREDMEM_H */

@@ -26,7 +26,7 @@
 #include <mach/panel_id.h>
 #include <mach/debug_display.h>
 #include "devices.h"
-#ifdef CONFIG_MACH_DUMMY
+#ifdef CONFIG_MACH_M7_WLJ
 #include "board-m7wlj.h"
 #else
 #include "board-m7wl.h"
@@ -39,10 +39,13 @@
 #include "../../../../drivers/video/msm/mdp4.h"
 #include <linux/i2c.h>
 #include <mach/msm_xo.h>
+#include <mach/htc_battery_common.h>
 
 #ifdef CONFIG_FB_MSM_TRIPLE_BUFFER
+/* prim = 1366 x 768 x 3(bpp) x 3(pages) */
 #define MSM_FB_PRIM_BUF_SIZE (1920 * ALIGN(1080, 32) * 4 * 3)
 #else
+/* prim = 1366 x 768 x 3(bpp) x 2(pages) */
 #define MSM_FB_PRIM_BUF_SIZE (1920 * ALIGN(1080, 32) * 4 * 2)
 #endif
 
@@ -52,13 +55,13 @@
 #define MSM_FB_OVERLAY0_WRITEBACK_SIZE roundup((1920 * 1080 * 3 * 2), 4096)
 #else
 #define MSM_FB_OVERLAY0_WRITEBACK_SIZE (0)
-#endif  
+#endif  /* CONFIG_FB_MSM_OVERLAY0_WRITEBACK */
 
 #ifdef CONFIG_FB_MSM_OVERLAY1_WRITEBACK
 #define MSM_FB_OVERLAY1_WRITEBACK_SIZE roundup((1920 * 1088 * 3 * 2), 4096)
 #else
 #define MSM_FB_OVERLAY1_WRITEBACK_SIZE (0)
-#endif  
+#endif  /* CONFIG_FB_MSM_OVERLAY1_WRITEBACK */
 
 static struct resource msm_fb_resources[] = {
 	{
@@ -69,6 +72,7 @@ struct msm_xo_voter *wa_xo;
 static char ptype[60] = "PANEL type = ";
 const size_t ptype_len = ( 60 - sizeof("PANEL type = "));
 
+//#define PANEL_NAME_MAX_LEN 30
 #define MIPI_NOVATEK_PANEL_NAME "mipi_cmd_novatek_qhd"
 #define MIPI_RENESAS_PANEL_NAME "mipi_video_renesas_fiwvga"
 #define MIPI_VIDEO_TOSHIBA_WSVGA_PANEL_NAME "mipi_video_toshiba_wsvga"
@@ -150,7 +154,7 @@ static struct msm_bus_vectors mdp_ui_vectors[] = {
 };
 
 static struct msm_bus_vectors mdp_vga_vectors[] = {
-	
+	/* VGA and less video */
 	{
 		.src = MSM_BUS_MASTER_MDP_PORT0,
 		.dst = MSM_BUS_SLAVE_EBI_CH0,
@@ -160,7 +164,7 @@ static struct msm_bus_vectors mdp_vga_vectors[] = {
 };
 
 static struct msm_bus_vectors mdp_720p_vectors[] = {
-	
+	/* 720p and less video */
 	{
 		.src = MSM_BUS_MASTER_MDP_PORT0,
 		.dst = MSM_BUS_SLAVE_EBI_CH0,
@@ -170,7 +174,7 @@ static struct msm_bus_vectors mdp_720p_vectors[] = {
 };
 
 static struct msm_bus_vectors mdp_1080p_vectors[] = {
-	
+	/* 1080p and less video */
 	{
 		.src = MSM_BUS_MASTER_MDP_PORT0,
 		.dst = MSM_BUS_SLAVE_EBI_CH0,
@@ -261,6 +265,7 @@ static int mdp_core_clk_rate_table[] = {
 struct mdp_reg *mdp_gamma = NULL;
 int mdp_gamma_count = 0;
 struct mdp_reg mdp_gamma_jdi[] = {
+//0p32_0p30
         {0x94800, 0x000000, 0x0},
         {0x94804, 0x000100, 0x0},
         {0x94808, 0x010201, 0x0},
@@ -853,7 +858,7 @@ static int mipi_dsi_panel_power(int on)
 	static struct regulator *reg_lvs5, *reg_l2;
 	static int gpio36, gpio37;
 	int rc;
-#ifdef CONFIG_MACH_DUMMY
+#ifdef CONFIG_MACH_M7_WLJ
 	static int bl_en;
 #endif
 
@@ -882,20 +887,20 @@ static int mipi_dsi_panel_power(int on)
 			return -EINVAL;
 		}
 
-		gpio36 = PM8921_GPIO_PM_TO_SYS(V_LCM_N5V_EN); 
+		gpio36 = PM8921_GPIO_PM_TO_SYS(V_LCM_N5V_EN); /* lcd1_pwr_en_n */
 		rc = gpio_request(gpio36, "lcd_5v-");
 		if (rc) {
 			pr_err("request lcd_5v- failed, rc=%d\n", rc);
 			return -ENODEV;
 		}
-		gpio37 = PM8921_GPIO_PM_TO_SYS(V_LCM_P5V_EN); 
+		gpio37 = PM8921_GPIO_PM_TO_SYS(V_LCM_P5V_EN); /* pwm_en */
 		rc = gpio_request(gpio37, "lcd_5v+");
 		if (rc) {
 			pr_err("request lcd_5v+ failed, rc=%d\n", rc);
 			return -ENODEV;
 		}
-#ifdef CONFIG_MACH_DUMMY
-		bl_en = PM8921_GPIO_PM_TO_SYS(BL_HW_EN); 
+#ifdef CONFIG_MACH_M7_WLJ
+		bl_en = PM8921_GPIO_PM_TO_SYS(BL_HW_EN); /* bl_en */
 		rc = gpio_request(bl_en, "bl_en");
 		if (rc) {
 			pr_err("request bl_en failed, rc=%d\n", rc);
@@ -926,18 +931,18 @@ static int mipi_dsi_panel_power(int on)
 			}
 			hr_msleep(1);
 			gpio_set_value_cansleep(gpio37, 1);
-			hr_msleep(2);  
+			hr_msleep(2);  //spec 1ms
 			gpio_set_value_cansleep(gpio36, 1);
-			hr_msleep(7);  
+			hr_msleep(7);  //spec 2ms
 			gpio_set_value(LCD_RST, 1);
 
-			
+			/* Workaround for 1mA */
 			msm_xo_mode_vote(wa_xo, MSM_XO_MODE_ON);
 			hr_msleep(10);
-			
+			/* Workaround for 1mA */
 			msm_xo_mode_vote(wa_xo, MSM_XO_MODE_OFF);
 		} else {
-			
+			/*Regulator needs enable first time*/
 			rc = regulator_enable(reg_lvs5);
 			if (rc) {
 				pr_err("enable lvs5 failed, rc=%d\n", rc);
@@ -953,7 +958,7 @@ static int mipi_dsi_panel_power(int on)
 				pr_err("enable l2 failed, rc=%d\n", rc);
 				return -ENODEV;
 			}
-			
+			/* Workaround for 1mA */
 			msm_xo_mode_vote(wa_xo, MSM_XO_MODE_ON);
 			msleep(10);
 			msm_xo_mode_vote(wa_xo, MSM_XO_MODE_OFF);
@@ -973,7 +978,7 @@ static int mipi_dsi_panel_power(int on)
 					cfg_panel_te_sleep[0], rc);
 		}
 #endif
-#ifdef CONFIG_MACH_DUMMY
+#ifdef CONFIG_MACH_M7_WLJ
 		gpio_set_value_cansleep(bl_en, 0);
 #else
 		gpio_tlmm_config(GPIO_CFG(BL_HW_EN, 0, GPIO_CFG_OUTPUT, GPIO_CFG_NO_PULL, GPIO_CFG_2MA), GPIO_CFG_ENABLE);
@@ -981,13 +986,13 @@ static int mipi_dsi_panel_power(int on)
 #endif
 
 		gpio_set_value(LCD_RST, 0);
-		hr_msleep(3);  
+		hr_msleep(3);  //spec 2ms
 
 		gpio_set_value_cansleep(gpio36, 0);
 		hr_msleep(2);
 		gpio_set_value_cansleep(gpio37, 0);
 
-		hr_msleep(8);  
+		hr_msleep(8);  //spec 5ms
 		rc = regulator_disable(reg_lvs5);
 		if (rc) {
 			pr_err("disable reg_lvs5 failed, rc=%d\n", rc);
@@ -1006,7 +1011,7 @@ static int mipi_dsi_panel_power(int on)
 }
 
 static struct mipi_dsi_platform_data mipi_dsi_pdata = {
-	
+	//.vsync_gpio = LCD_RST,
 	.dsi_power_save = mipi_dsi_panel_power,
 };
 
@@ -1054,23 +1059,23 @@ static atomic_t lcd_backlight_off;
 
 #define CABC_DIMMING_SWITCH
 
-static char enter_sleep[2] = {0x10, 0x00}; 
-static char exit_sleep[2] = {0x11, 0x00}; 
-static char display_off[2] = {0x28, 0x00}; 
-static char display_on[2] = {0x29, 0x00}; 
+static char enter_sleep[2] = {0x10, 0x00}; /* DTYPE_DCS_WRITE */
+static char exit_sleep[2] = {0x11, 0x00}; /* DTYPE_DCS_WRITE */
+static char display_off[2] = {0x28, 0x00}; /* DTYPE_DCS_WRITE */
+static char display_on[2] = {0x29, 0x00}; /* DTYPE_DCS_WRITE */
 static char nop[2] = {0x00, 0x00};
 static char CABC[2] = {0x55, 0x00};
 static char jdi_samsung_CABC[2] = {0x55, 0x03};
 
-static char samsung_password_l2[3] = { 0xF0, 0x5A, 0x5A}; 
-static char samsung_MIE_ctrl1[4] = {0xC0, 0x40, 0x10, 0x80};
-static char samsung_MIE_ctrl2[2] = {0xC2, 0x0F}; 
+static char samsung_password_l2[3] = { 0xF0, 0x5A, 0x5A}; /* DTYPE_GEN_LWRITE */
+static char samsung_MIE_ctrl1[4] = {0xC0, 0x40, 0x10, 0x80};/* DTYPE_GEN_LWRITE */
+static char samsung_MIE_ctrl2[2] = {0xC2, 0x0F}; /* DTYPE_GEN_WRITE */
 
 #ifdef CABC_DIMMING_SWITCH
-static char dsi_dim_on[] = {0x53, 0x2C};
-static char dsi_dim_off[] = {0x53, 0x24};
-static char dsi_sharp_cmd_dim_on[] = {0x53, 0x0C};
-static char dsi_sharp_cmd_dim_off[] = {0x53, 0x04};
+static char dsi_dim_on[] = {0x53, 0x2C};/* DTYPE_DCS_LWRITE *///bkl_ctrl on and dimming on
+static char dsi_dim_off[] = {0x53, 0x24};/* DTYPE_DCS_LWRITE *///bkl_ctrl on and dimming off
+static char dsi_sharp_cmd_dim_on[] = {0x53, 0x0C};/* DTYPE_DCS_LWRITE *///bkl_ctrl on and dimming on
+static char dsi_sharp_cmd_dim_off[] = {0x53, 0x04};/* DTYPE_DCS_LWRITE *///bkl_ctrl on and dimming off
 
 static struct dsi_cmd_desc jdi_renesas_dim_on_cmds[] = {
 	{DTYPE_DCS_LWRITE, 1, 0, 0, 1, sizeof(dsi_dim_on), dsi_dim_on},
@@ -1111,13 +1116,13 @@ static struct dsi_cmd_desc sharp_cmd_dim_off_cmds[] = {
 };
 #endif
 #if 0
-static char samsung_display_ctrl[2] = { 0xB1, 0x00}; 
+static char samsung_display_ctrl[2] = { 0xB1, 0x00}; /* DTYPE_GEN_WRITE */
 
-static char samsung_display_ctrl_interface[5] = { 0xB2, 0x00, 0x02, 0x04, 0x48 };
+static char samsung_display_ctrl_interface[5] = { 0xB2, 0x00, 0x02, 0x04, 0x48 };/* DTYPE_GEN_LWRITE */
 
-static char samsung_ctrl_BRR[2] = { 0xB3, 0x00 }; 
-static char samsung_crtl_Hsync[2] = { 0xB5, 0x00 }; 
-static char samsung_ctrl_GoutL[33] = { 
+static char samsung_ctrl_BRR[2] = { 0xB3, 0x00 }; /*DTYPE_GEN_WRITE */
+static char samsung_crtl_Hsync[2] = { 0xB5, 0x00 }; /*DTYPE_GEN_WRITE */
+static char samsung_ctrl_GoutL[33] = { /* DTYPE_GEN_LWRITE */
 		0xB7, 0x00, 0x00, 0x00,
 		0x00, 0x03, 0x09, 0x04,
 		0x06, 0x05, 0x07, 0x08,
@@ -1128,7 +1133,7 @@ static char samsung_ctrl_GoutL[33] = {
 		0x00, 0x00, 0x00, 0x00,
 		0x00};
 
-static char samsung_ctrl_GoutR[33] = { 
+static char samsung_ctrl_GoutR[33] = { /* DTYPE_GEN_LWRITE */
 		0xB8, 0x00, 0x00, 0x00,
 		0x00, 0x10, 0x16, 0x11,
 		0x13, 0x12, 0x14, 0x15,
@@ -1139,29 +1144,29 @@ static char samsung_ctrl_GoutR[33] = {
 		0x00, 0x00, 0x00, 0x00,
 		0x00};
 
-static char samsung_ctrl_bl_mode[2] = {0xC1, 0x03}; 
-static char samsung_MIE_ctrl2[2] = {0xC2, 0x00}; 
+static char samsung_ctrl_bl_mode[2] = {0xC1, 0x03}; /* DTYPE_GEN_WRITE */
+static char samsung_MIE_ctrl2[2] = {0xC2, 0x00}; /* DTYPE_GEN_WRITE */
 
-static char samsung_ctrl_bl[4] = {0xC3, 0x7C, 0x40, 0x22};
+static char samsung_ctrl_bl[4] = {0xC3, 0x7C, 0x40, 0x22};/* DTYPE_GEN_LWRITE */
 
-static char samsung_ctrl_SHE[2] = { 0xE8, 0x00}; 
-static char samsung_ctrl_SAE[2] = { 0xE9, 0x00}; 
+static char samsung_ctrl_SHE[2] = { 0xE8, 0x00}; /* DTYPE_GEN_WRITE */
+static char samsung_ctrl_SAE[2] = { 0xE9, 0x00}; /* DTYPE_GEN_WRITE */
 
-static char samsung_ctrl_source[17] = { 
+static char samsung_ctrl_source[17] = { /* DTYPE_GEN_LWRITE */
 		0xF2, 0x0C, 0x03, 0x03,
 		0x06, 0x04, 0x00, 0x25,
 		0x00, 0x26, 0x00, 0xD1,
 		0x00, 0xD1, 0x0A, 0x0A,
 		0x00};
 
-static char samsung_ctrl_power[19] = { 
+static char samsung_ctrl_power[19] = { /* DTYPE_GEN_LWRITE */
 		0xF3, 0x99, 0x22, 0x0A,
 		0x0A, 0x00, 0x09, 0x0C,
 		0x00, 0x1B, 0x00, 0x1B,
 		0x00, 0x2E, 0x08, 0x33,
 		0x33, 0x53, 0x11};
 
-static char samsung_ctrl_panel[22] = { 
+static char samsung_ctrl_panel[22] = { /* DTYPE_GEN_LWRITE */
 		0xF5, 0x06, 0x00, 0x0D,
 		0x21, 0x0A, 0x00, 0x17,
 		0x11, 0x09, 0x00, 0x06,
@@ -1170,14 +1175,14 @@ static char samsung_ctrl_panel[22] = {
 		0x00, 0x01};
 
 #endif
-static char samsung_ctrl_source[17] = { 
+static char samsung_ctrl_source[17] = { /* DTYPE_GEN_LWRITE */
 		0xF2, 0x0C, 0x03, 0x73,
 		0x06, 0x04, 0x00, 0x25,
 		0x00, 0x26, 0x00, 0xD1,
 		0x00, 0xD1, 0x00, 0x00,
 		0x00};
-static char samsung_ctrl_bl[4] = {0xC3, 0x63, 0x40, 0x01}; 
-static char samsung_ctrl_positive_gamma[70] = { 
+static char samsung_ctrl_bl[4] = {0xC3, 0x63, 0x40, 0x01}; //12kHz
+static char samsung_ctrl_positive_gamma[70] = { /* DTYPE_GEN_LWRITE */
 		0xFA, 0x00, 0x3F, 0x20,
 		0x19, 0x25, 0x24, 0x27,
 		0x19, 0x19, 0x13, 0x00,
@@ -1197,7 +1202,7 @@ static char samsung_ctrl_positive_gamma[70] = {
 		0x25, 0x2A, 0x2B, 0x2A,
 		0x20, 0x3C};
 
-static char samsung_ctrl_negative_gamma[70] = { 
+static char samsung_ctrl_negative_gamma[70] = { /* DTYPE_GEN_LWRITE */
 		0xFB, 0x00, 0x3F, 0x20,
 		0x19, 0x25, 0x24, 0x27,
 		0x19, 0x19, 0x13, 0x00,
@@ -1216,34 +1221,35 @@ static char samsung_ctrl_negative_gamma[70] = {
 		0x0F, 0x14, 0x15, 0x1F,
 		0x25, 0x2A, 0x2B, 0x2A,
 		0x20, 0x3C};
-static char samsung_password_l3[3] = { 0xFC, 0x5A, 0x5A }; 
+static char samsung_password_l3[3] = { 0xFC, 0x5A, 0x5A }; /* DTYPE_GEN_LWRITE */
 
-static char samsung_cmd_test[5] = { 0xFF, 0x00, 0x00, 0x00, 0x20 }; 
+static char samsung_cmd_test[5] = { 0xFF, 0x00, 0x00, 0x00, 0x20 }; /* DTYPE_GEN_LWRITE */
 
-static char samsung_panel_exit_sleep[2] = {0x11, 0x00}; 
+static char samsung_panel_exit_sleep[2] = {0x11, 0x00}; /* DTYPE_DCS_WRITE */
 #ifdef CABC_DIMMING_SWITCH
-static char samsung_bl_ctrl[2] = {0x53, 0x24};
+static char samsung_bl_ctrl[2] = {0x53, 0x24};/* DTYPE_DCS_WRITE1 */
 #else
-static char samsung_bl_ctrl[2] = {0x53, 0x2C};
+static char samsung_bl_ctrl[2] = {0x53, 0x2C};/* DTYPE_DCS_WRITE1 */
 #endif
-static char samsung_ctrl_brightness[2] = {0x51, 0xFF};
-static char samsung_enable_te[2] = {0x35, 0x00};
+static char samsung_ctrl_brightness[2] = {0x51, 0xFF};/* DTYPE_DCS_WRITE1 */
+static char samsung_enable_te[2] = {0x35, 0x00};/* DTYPE_DCS_WRITE1 */
 
-static char samsung_set_column_address[5] = { 0x2A, 0x00, 0x00, 0x04, 0x37 }; 
+static char samsung_set_column_address[5] = { 0x2A, 0x00, 0x00, 0x04, 0x37 }; /* DTYPE_DCS_LWRITE for 1080*/
 
-static char samsung_set_page_address[5] = { 0x2B, 0x00, 0x00, 0x07, 0x7F }; 
-static char samsung_panel_display_on[2] = {0x29, 0x00}; 
-static char samsung_display_off[2] = {0x28, 0x00}; 
-static char samsung_enter_sleep[2] = {0x10, 0x00}; 
+static char samsung_set_page_address[5] = { 0x2B, 0x00, 0x00, 0x07, 0x7F }; /* DTYPE_DCS_LWRITE for 1920*/
+//static char samsung_mad_ctrl[2] = {0x36, 0x08};/* DTYPE_DCS_WRITE1 */
+static char samsung_panel_display_on[2] = {0x29, 0x00}; /* DTYPE_DCS_WRITE */
+static char samsung_display_off[2] = {0x28, 0x00}; /* DTYPE_DCS_WRITE */
+static char samsung_enter_sleep[2] = {0x10, 0x00}; /* DTYPE_DCS_WRITE */
 
-static char samsung_deep_standby_off[2] = {0xB0, 0x01}; 
+static char samsung_deep_standby_off[2] = {0xB0, 0x01}; /* DTYPE_GEN_WRITE */
 static char SAE[2] = {0xE9, 0x12};
 static char samsung_swwr_mipi_speed[4] = {0xE4, 0x00, 0x04, 0x00};
 static char samsung_swwr_kinky_gamma[17] = {0xF2, 0x0C, 0x03, 0x03, 0x06, 0x04, 0x00, 0x25, 0x00, 0x26, 0x00, 0xD1, 0x00, 0xD1, 0x00, 0x0A, 0x00};
-static char samsung_password_l2_close[3] = { 0xF0, 0xA5, 0xA5}; 
-static char samsung_password_l3_close[3] = { 0xFC, 0xA5, 0xA5}; 
-static char  Oscillator_Bias_Current[4] = { 0xFD, 0x56, 0x08, 0x00}; 
-static char samsung_ctrl_positive_gamma_c2_1[70] = { 
+static char samsung_password_l2_close[3] = { 0xF0, 0xA5, 0xA5}; /* DTYPE_GEN_LWRITE */
+static char samsung_password_l3_close[3] = { 0xFC, 0xA5, 0xA5}; /* DTYPE_GEN_LWRITE */
+static char  Oscillator_Bias_Current[4] = { 0xFD, 0x56, 0x08, 0x00}; /* DTYPE_GEN_LWRITE */
+static char samsung_ctrl_positive_gamma_c2_1[70] = { /* DTYPE_GEN_LWRITE */
 		0xFA, 0x1E, 0x38, 0x0C,
 		0x0C, 0x12, 0x14, 0x16,
 		0x17, 0x1A, 0x1A, 0x19,
@@ -1262,7 +1268,7 @@ static char samsung_ctrl_positive_gamma_c2_1[70] = {
 		0x16, 0x18, 0x19, 0x1F,
 		0x22, 0x23, 0x24, 0x2A,
 		0x2D, 0x37};
-static char samsung_ctrl_negative_gamma_c2_1[70] = { 
+static char samsung_ctrl_negative_gamma_c2_1[70] = { /* DTYPE_GEN_LWRITE */
 		0xFB, 0x1E, 0x38, 0x0C,
 		0x0C, 0x12, 0x14, 0x16,
 		0x17, 0x1A, 0x1A, 0x19,
@@ -1282,13 +1288,13 @@ static char samsung_ctrl_negative_gamma_c2_1[70] = {
 		0x22, 0x23, 0x24, 0x2A,
 		0x2D, 0x37};
 
-static char BCSAVE[] = { 
+static char BCSAVE[] = { /* DTYPE_GEN_LWRITE */
 		0xCD, 0x80, 0xB3, 0x67,
 		0x1C, 0x78, 0x37, 0x00,
 		0x10, 0x73, 0x41, 0x99,
 		0x10, 0x00, 0x00};
 
-static char TMF[] = { 
+static char TMF[] = { /* DTYPE_GEN_LWRITE */
 		0xCE, 0x33, 0x1C, 0x0D,
 		0x20, 0x14, 0x00, 0x16,
 		0x23, 0x18, 0x2C, 0x16,
@@ -1370,7 +1376,7 @@ static struct dsi_cmd_desc samsung_jdi_panel_cmd_mode_cmds_c2_nvm[] = {
 	{DTYPE_DCS_WRITE1, 1, 0, 0, 1, sizeof(samsung_bl_ctrl), samsung_bl_ctrl},
 	{DTYPE_DCS_WRITE1, 1, 0, 0, 1, sizeof(CABC), CABC},
 	{DTYPE_DCS_WRITE1, 1, 0, 0, 1, sizeof(samsung_enable_te), samsung_enable_te},
-	
+	//{DTYPE_DCS_WRITE, 1, 0, 0, 1, sizeof(samsung_panel_display_on), samsung_panel_display_on},
 };
 
 static struct dsi_cmd_desc samsung_jdi_panel_cmd_mode_cmds_c2_1[] = {
@@ -1395,7 +1401,7 @@ static struct dsi_cmd_desc samsung_jdi_panel_cmd_mode_cmds_c2_1[] = {
 	{DTYPE_DCS_WRITE1, 1, 0, 0, 1, sizeof(samsung_bl_ctrl), samsung_bl_ctrl},
 	{DTYPE_DCS_WRITE1, 1, 0, 0, 1, sizeof(jdi_samsung_CABC), jdi_samsung_CABC},
 	{DTYPE_DCS_WRITE1, 1, 0, 0, 1, sizeof(samsung_enable_te), samsung_enable_te},
-	
+	//{DTYPE_DCS_WRITE, 1, 0, 0, 1, sizeof(samsung_panel_display_on), samsung_panel_display_on},
 };
 static struct dsi_cmd_desc samsung_jdi_panel_cmd_mode_cmds_c2_2[] = {
 	{DTYPE_GEN_LWRITE, 1, 0, 0, 1, sizeof(samsung_password_l3), samsung_password_l3},
@@ -1417,7 +1423,7 @@ static struct dsi_cmd_desc samsung_jdi_panel_cmd_mode_cmds_c2_2[] = {
 	{DTYPE_DCS_WRITE1, 1, 0, 0, 1, sizeof(samsung_bl_ctrl), samsung_bl_ctrl},
 	{DTYPE_DCS_WRITE1, 1, 0, 0, 1, sizeof(jdi_samsung_CABC), jdi_samsung_CABC},
 	{DTYPE_DCS_WRITE1, 1, 0, 0, 1, sizeof(samsung_enable_te), samsung_enable_te},
-	
+	//{DTYPE_DCS_WRITE, 1, 0, 0, 1, sizeof(samsung_panel_display_on), samsung_panel_display_on},
 };
 
 static struct dsi_cmd_desc samsung_display_off_cmds[] = {
@@ -1428,7 +1434,7 @@ static struct dsi_cmd_desc samsung_display_off_cmds[] = {
 };
 
 static char write_display_brightness[3]= {0x51, 0x0F, 0xFF};
-static char write_control_display[2] = {0x53, 0x24}; 
+static char write_control_display[2] = {0x53, 0x24}; /* DTYPE_DCS_WRITE1 */
 static struct dsi_cmd_desc renesas_cmd_backlight_cmds[] = {
 	{DTYPE_DCS_LWRITE, 1, 0, 0, 0, sizeof(write_display_brightness), write_display_brightness},
 };
@@ -1465,7 +1471,7 @@ static char BackLight_Control_6[8]= {
 	0xC1, 0x24, 0xB2, 0x02};
 static char BackLight_Control_6_28kHz[8]= {
        0xCE, 0x00, 0x01, 0x00,
-       0xC1, 0xF4, 0xB2, 0x02}; 
+       0xC1, 0xF4, 0xB2, 0x02}; /* DTYPE_GEN_LWRITE */
 static char Manufacture_Command_setting[4] = {0xD6, 0x01};
 static char hsync_output[4] = {0xC3, 0x01, 0x00, 0x10};
 static char protect_on[4] = {0xB0, 0x03};
@@ -1488,19 +1494,27 @@ static char Source_Timing_Setting[23]= {
 	0x55, 0x00, 0x00, 0x00,
 	0x00, 0x05, 0x05};
 static char lock[] = {0xB0, 0x03};
-static char Write_Content_Adaptive_Brightness_Control[2] = {0x55, 0x42};
+/* CABC and SRE control ++*/
+static char Write_Content_Adaptive_Brightness_Control[2] = {0x55, 0x42};// SRE_ON[6]=1
+//CABC:
 static char common_setting[] = {
        0xCE, 0x6C, 0x40, 0x43,
        0x49, 0x55, 0x62, 0x71,
        0x82, 0x94, 0xA8, 0xB9,
        0xCB, 0xDB, 0xE9, 0xF5,
-       0xFC, 0xFF, 0x04, 0xD3, 
+       0xFC, 0xFF, 0x04, 0xD3, //12kHz
        0x00, 0x00, 0x54, 0x24};
 
+//static char cabc_GUI[] = {0xB8, 0x07, 0x90, 0x1E, 0x10, 0x1E, 0x32};
 static char cabc_still[] = {0xB9, 0x03, 0x82, 0x3C, 0x10, 0x3C, 0x87};
 static char cabc_movie[] = {0xBA, 0x03, 0x78, 0x64, 0x10, 0x64, 0xB4};
+//SRE:
+//static char SRE_weak[] = {0xBB, 0x03, 0x1E, 0x14};
+//static char SRE_middle[] = {0xBC, 0x03, 0x50, 0x32};
+//static char SRE_strong[] = {0xBD, 0x03, 0xB4, 0xA0};
 static char SRE_Manual_0[] = {0xBB, 0x01, 0x00, 0x00};
 
+/* CABC and SRE control --*/
 static char blue_shift_adjust_1[] = {
 	0xC7, 0x01, 0x0B, 0x12,
 	0x1B, 0x2A, 0x3A, 0x45,
@@ -1539,7 +1553,7 @@ static struct dsi_cmd_desc sharp_renesas_cmd_on_cmds[] = {
 	{DTYPE_DCS_LWRITE, 1, 0, 0, 1, sizeof(nop), nop},
 	{DTYPE_DCS_LWRITE, 1, 0, 0, 1, sizeof(nop), nop},
 	{DTYPE_DCS_WRITE1, 1, 0, 0, 1, sizeof(enable_te), enable_te},
-	
+	//{DTYPE_DCS_WRITE, 1, 0, 0, 0, sizeof(display_on), display_on},
 	{DTYPE_DCS_WRITE, 1, 0, 0, 120, sizeof(exit_sleep), exit_sleep},
 };
 static struct dsi_cmd_desc m7_sharp_video_on_cmds[] = {
@@ -1553,7 +1567,7 @@ static struct dsi_cmd_desc m7_sharp_video_on_cmds[] = {
 	{DTYPE_DCS_WRITE1, 1, 0, 0, 1, sizeof(write_control_display), write_control_display},
 	{DTYPE_DCS_WRITE1, 1, 0, 0, 1, sizeof(CABC), CABC},
 	{DTYPE_DCS_WRITE1, 1, 0, 0, 1, sizeof(TE_OUT), TE_OUT},
-	
+	//{DTYPE_DCS_WRITE, 1, 0, 0, 0, sizeof(display_on), display_on},
 	{DTYPE_DCS_WRITE, 1, 0, 0, 1, sizeof(exit_sleep), exit_sleep},
 
 };
@@ -1569,7 +1583,7 @@ static struct dsi_cmd_desc sharp_video_on_cmds[] = {
 	{DTYPE_DCS_WRITE1, 1, 0, 0, 0, sizeof(write_control_display), write_control_display},
 	{DTYPE_DCS_WRITE1, 1, 0, 0, 0, sizeof(CABC), CABC},
 	{DTYPE_DCS_WRITE1, 1, 0, 0, 0, sizeof(TE_OUT), TE_OUT},
-	
+	//{DTYPE_DCS_WRITE, 1, 0, 0, 0, sizeof(display_on), display_on},
 	{DTYPE_DCS_WRITE, 1, 0, 0, 0, sizeof(exit_sleep), exit_sleep},
 
 };
@@ -1608,8 +1622,8 @@ static struct dsi_cmd_desc sony_display_off_cmds[] = {
 	{DTYPE_GEN_LWRITE, 1, 0, 0, 0, sizeof(deep_standby_off), deep_standby_off},
 };
 
-static char unlock_command[2] = {0xB0, 0x04}; 
-static char lock_command[2] = {0xB0, 0x03}; 
+static char unlock_command[2] = {0xB0, 0x04}; /* DTYPE_GEN_LWRITE */
+static char lock_command[2] = {0xB0, 0x03}; /* DTYPE_GEN_LWRITE */
 static struct dsi_cmd_desc jdi_renesas_cmd_on_cmds[] = {
 	{DTYPE_GEN_LWRITE, 1, 0, 0, 1, sizeof(unlock_command), unlock_command},
 	{DTYPE_GEN_LWRITE, 1, 0, 0, 1, sizeof(common_setting), common_setting},
@@ -1623,6 +1637,7 @@ static struct dsi_cmd_desc jdi_renesas_cmd_on_cmds[] = {
 	{DTYPE_DCS_WRITE1, 1, 0, 0, 1, sizeof(write_control_display), write_control_display},
 	{DTYPE_DCS_LWRITE, 1, 0, 0, 1, sizeof(Write_Content_Adaptive_Brightness_Control), Write_Content_Adaptive_Brightness_Control},
 	{DTYPE_DCS_WRITE1, 1, 0, 0, 1, sizeof(enable_te), enable_te},
+//	{DTYPE_DCS_WRITE, 1, 0, 0, 1, sizeof(display_on), display_on},
 };
 
 static struct dsi_cmd_desc jdi_display_off_cmds[] = {
@@ -1694,8 +1709,9 @@ static int __devinit m7wl_lcd_probe(struct platform_device *pdev)
 
 	msm_fb_add_device(pdev);
 
-	
-	if ((board_mfg_mode() == 4) || (board_mfg_mode() == 5)) {
+	/* Disable dsi clock when off-mode */
+	if ((board_mfg_mode() == 4) ||
+		((board_mfg_mode() == 5) && !(htc_battery_get_zcharge_mode() & 0x1))) {
 		cont_splash_clk_ctrl(0);
 	}
 
@@ -1704,7 +1720,7 @@ static int __devinit m7wl_lcd_probe(struct platform_device *pdev)
 }
 static void m7wl_display_on(struct msm_fb_data_type *mfd)
 {
-	
+	/* It needs 120ms when LP to HS for renesas */
 	if (panel_type == PANEL_ID_DLXJ_SHARP_RENESAS ||
 		panel_type == PANEL_ID_DLXJ_SONY_RENESAS ||
 		panel_type == PANEL_ID_M7_SHARP_RENESAS)
@@ -1787,7 +1803,7 @@ static unsigned char m7wl_shrink_pwm(int val)
 	} else if (val > BRI_SETTING_MAX)
 		shrink_br = pwm_max;
 
-	pwm_value = shrink_br; 
+	pwm_value = shrink_br; //current pwm value
 
 	PR_DISP_INFO("brightness orig=%d, transformed=%d\n", val, shrink_br);
 
@@ -1819,7 +1835,7 @@ unsigned char val4[6] = {0x14, 0xF0, 0xA0, 0x50, 0x11, 0x08};
 
 static void m7wl_set_backlight(struct msm_fb_data_type *mfd)
 {
-#ifdef CONFIG_MACH_DUMMY
+#ifdef CONFIG_MACH_M7_WLJ
 	static int bl_en = PM8921_GPIO_PM_TO_SYS(BL_HW_EN);
 #endif
 	int rc;
@@ -1839,10 +1855,10 @@ static void m7wl_set_backlight(struct msm_fb_data_type *mfd)
 	else
 		write_display_brightness[2] = m7wl_shrink_pwm((unsigned char)(mfd->bl_level));
 
-	if(pwmic_ver >= 2) { 
+	if(pwmic_ver >= 2) { // pwm ic version A2
 		if (resume_blk) {
 			resume_blk = 0;
-#ifdef CONFIG_MACH_DUMMY
+#ifdef CONFIG_MACH_M7_WLJ
 			gpio_set_value_cansleep(bl_en, 1);
 #else
 			gpio_tlmm_config(GPIO_CFG(BL_HW_EN, 0, GPIO_CFG_OUTPUT, GPIO_CFG_NO_PULL, GPIO_CFG_2MA), GPIO_CFG_ENABLE);
@@ -1856,7 +1872,7 @@ static void m7wl_set_backlight(struct msm_fb_data_type *mfd)
 	} else {
 		if (resume_blk) {
 			resume_blk = 0;
-#ifdef CONFIG_MACH_DUMMY
+#ifdef CONFIG_MACH_M7_WLJ
 			gpio_set_value_cansleep(bl_en, 1);
 #else
 			gpio_tlmm_config(GPIO_CFG(BL_HW_EN, 0, GPIO_CFG_OUTPUT, GPIO_CFG_NO_PULL, GPIO_CFG_2MA), GPIO_CFG_ENABLE);
@@ -1893,7 +1909,7 @@ static void m7wl_set_backlight(struct msm_fb_data_type *mfd)
 	}
 
 #ifdef CABC_DIMMING_SWITCH
-        
+        /* Turn off dimming before suspend */
         if (samsung_ctrl_brightness[1] == 0 || display_brightness[1] == 0 || write_display_brightness[2] == 0) {
                 atomic_set(&lcd_backlight_off, 1);
 		cmdreq.cmds = dim_off_cmds;
@@ -1915,13 +1931,13 @@ static void m7wl_set_backlight(struct msm_fb_data_type *mfd)
 	mipi_dsi_cmdlist_put(&cmdreq);
 
 #ifdef CONFIG_FB_MSM_CABC_LEVEL_CONTROL
-	
+	//CABC for Camera Zoe mode
 	if (cabc_mode == 3) {
 		m7wl_set_cabc(mfd, cabc_mode);
 	}
 #endif
 	if ((mfd->bl_level) == 0) {
-#ifdef CONFIG_MACH_DUMMY
+#ifdef CONFIG_MACH_M7_WLJ
 		gpio_set_value_cansleep(bl_en, 0);
 #else
 		gpio_tlmm_config(GPIO_CFG(BL_HW_EN, 0, GPIO_CFG_OUTPUT, GPIO_CFG_NO_PULL, GPIO_CFG_2MA), GPIO_CFG_ENABLE);
@@ -2325,32 +2341,32 @@ err_device_put:
 }
 
 static struct mipi_dsi_phy_ctrl dsi_video_mode_phy_db = {
-	
-	
+	/* DSI_BIT_CLK at 860MHz, 4 lane, RGB888 */
+	/* regulator *//* off=0x0500 */
 	{0x03, 0x08, 0x05, 0x00, 0x20},
-	
+	/* timing *//* off=0x0440 */
 	{0xDD, 0x51, 0x27, 0x00, 0x6E, 0x74, 0x2C,
 	0x55, 0x3E, 0x3, 0x4, 0xA0},
-	
+	/* phy ctrl *//* off=0x0470 */
 	{0x5F, 0x00, 0x00, 0x10},
-	
+	/* strength *//* off=0x0480 */
 	{0xFF, 0x00, 0x06, 0x00},
-	
+	/* pll control *//* off=0x0204 */
 	{0x00, 0x38, 0x32, 0xDA, 0x00, 0x10, 0x0F, 0x61,
 	0x41, 0x0F, 0x01,
 	0x00, 0x1A, 0x00, 0x00, 0x02, 0x00, 0x20, 0x00, 0x02 },
 };
 
 static struct mipi_dsi_phy_ctrl dsi_jdi_cmd_mode_phy_db = {
-	
+	/* DSI_BIT_CLK at 830MHz, 4 lane, RGB888 */
         {0x03, 0x08, 0x05, 0x00, 0x20},
-        
+        /* timing *//* off=0x0440 */
 	{0xD7, 0x34, 0x23, 0x00, 0x63, 0x6A, 0x28, 0x37, 0x3C, 0x03, 0x04},
-        
+        /* phy ctrl *//* off=0x0470 */
         {0x5F, 0x00, 0x00, 0x10},
-        
+        /* strength *//* off=0x0480 */
         {0xFF, 0x00, 0x06, 0x00},
-        
+        /* pll control *//* off=0x0204 */
 	{0x00, 0xA8, 0x30, 0xCA, 0x00, 0x20, 0x0F, 0x62, 0x70, 0x88, 0x99, 0x00, 0x14, 0x03, 0x00, 0x02, 0x00, 0x20, 0x00, 0x01 },
 };
 
@@ -2379,8 +2395,8 @@ static int __init mipi_cmd_jdi_renesas_init(void)
 	pinfo.lcd.v_front_porch = pinfo.lcdc.v_front_porch;
 	pinfo.lcd.v_pulse_width = pinfo.lcdc.v_pulse_width;
 
-	pinfo.lcdc.border_clr = 0;      
-	pinfo.lcdc.underflow_clr = 0xff;        
+	pinfo.lcdc.border_clr = 0;      /* blk */
+	pinfo.lcdc.underflow_clr = 0xff;        /* blue */
 	pinfo.lcdc.hsync_skew = 0;
 	pinfo.bl_max = 255;
 	pinfo.bl_min = 1;
@@ -2389,7 +2405,7 @@ static int __init mipi_cmd_jdi_renesas_init(void)
 
 	pinfo.lcd.vsync_enable = TRUE;
 	pinfo.lcd.hw_vsync_mode = TRUE;
-	pinfo.lcd.refx100 = 6000; 
+	pinfo.lcd.refx100 = 6000; /* adjust refx100 to prevent tearing */
 
 	pinfo.mipi.mode = DSI_CMD_MODE;
 	pinfo.mipi.dst_format = DSI_CMD_DST_FORMAT_RGB888;
@@ -2403,10 +2419,10 @@ static int __init mipi_cmd_jdi_renesas_init(void)
 	pinfo.mipi.tx_eot_append = TRUE;
 	pinfo.mipi.t_clk_post = 0x3;
 	pinfo.mipi.t_clk_pre = 0x2B;
-	pinfo.mipi.stream = 0;  
+	pinfo.mipi.stream = 0;  /* dma_p */
 	pinfo.mipi.mdp_trigger = DSI_CMD_TRIGGER_NONE;
 	pinfo.mipi.dma_trigger = DSI_CMD_TRIGGER_SW;
-	pinfo.mipi.te_sel = 1; 
+	pinfo.mipi.te_sel = 1; /* TE from vsycn gpio */
 	pinfo.mipi.interleave_max = 1;
 	pinfo.mipi.insert_dcs_cmd = TRUE;
 	pinfo.mipi.wr_mem_continue = 0x3c;
@@ -2483,18 +2499,18 @@ static int __init mipi_cmd_sharp_init(void)
 	pinfo.lcd.v_front_porch = pinfo.lcdc.v_front_porch;
 	pinfo.lcd.v_pulse_width = pinfo.lcdc.v_pulse_width;
 
-	pinfo.lcdc.border_clr = 0;	
-	pinfo.lcdc.underflow_clr = 0xff;	
+	pinfo.lcdc.border_clr = 0;	/* blk */
+	pinfo.lcdc.underflow_clr = 0xff;	/* blue */
 	pinfo.lcdc.hsync_skew = 0;
 	pinfo.bl_max = 255;
 	pinfo.bl_min = 1;
 	pinfo.fb_num = 2;
 	pinfo.clk_rate = 830000000;
 
-	
+	//pinfo.is_3d_panel = FB_TYPE_3D_PANEL;
 	pinfo.lcd.vsync_enable = TRUE;
 	pinfo.lcd.hw_vsync_mode = TRUE;
-	pinfo.lcd.refx100 = 6000; 
+	pinfo.lcd.refx100 = 6000; /* adjust refx100 to prevent tearing */
 
 	pinfo.mipi.mode = DSI_CMD_MODE;
 	pinfo.mipi.dst_format = DSI_CMD_DST_FORMAT_RGB888;
@@ -2508,10 +2524,10 @@ static int __init mipi_cmd_sharp_init(void)
 	pinfo.mipi.tx_eot_append = TRUE;
 	pinfo.mipi.t_clk_post = 0x3;
 	pinfo.mipi.t_clk_pre = 0x2B;
-	pinfo.mipi.stream = 0;	
+	pinfo.mipi.stream = 0;	/* dma_p */
 	pinfo.mipi.mdp_trigger = DSI_CMD_TRIGGER_NONE;
 	pinfo.mipi.dma_trigger = DSI_CMD_TRIGGER_SW;
-	pinfo.mipi.te_sel = 1; 
+	pinfo.mipi.te_sel = 1; /* TE from vsycn gpio */
 	pinfo.mipi.interleave_max = 1;
 	pinfo.mipi.insert_dcs_cmd = TRUE;
 	pinfo.mipi.wr_mem_continue = 0x3c;
@@ -2588,8 +2604,8 @@ static int __init mipi_video_sharp_init(void)
 	pinfo.lcd.v_front_porch = 4;
 	pinfo.lcd.v_pulse_width = 2;
 
-	pinfo.lcdc.border_clr = 0;	
-	pinfo.lcdc.underflow_clr = 0xff;	
+	pinfo.lcdc.border_clr = 0;	/* blk */
+	pinfo.lcdc.underflow_clr = 0xff;	/* blue */
 	pinfo.lcdc.hsync_skew = 0;
 	pinfo.bl_max = 255;
 	pinfo.bl_min = 1;
@@ -2615,7 +2631,7 @@ static int __init mipi_video_sharp_init(void)
 	pinfo.mipi.tx_eot_append = TRUE;
 	pinfo.mipi.t_clk_post = 0x05;
 	pinfo.mipi.t_clk_pre = 0x2D;
-	pinfo.mipi.stream = 0; 
+	pinfo.mipi.stream = 0; /* dma_p */
 	pinfo.mipi.mdp_trigger = DSI_CMD_TRIGGER_SW;
 	pinfo.mipi.dma_trigger = DSI_CMD_TRIGGER_SW;
 	pinfo.mipi.frame_rate = 60;
@@ -2685,8 +2701,8 @@ static int __init mipi_video_sony_init(void)
 	pinfo.lcd.v_front_porch = 3;
 	pinfo.lcd.v_pulse_width = 2;
 
-	pinfo.lcdc.border_clr = 0;	
-	pinfo.lcdc.underflow_clr = 0xff;	
+	pinfo.lcdc.border_clr = 0;	/* blk */
+	pinfo.lcdc.underflow_clr = 0xff;	/* blue */
 	pinfo.lcdc.hsync_skew = 0;
 	pinfo.bl_max = 255;
 	pinfo.bl_min = 1;
@@ -2712,7 +2728,7 @@ static int __init mipi_video_sony_init(void)
 	pinfo.mipi.tx_eot_append = TRUE;
 	pinfo.mipi.t_clk_post = 0x05;
 	pinfo.mipi.t_clk_pre = 0x2D;
-	pinfo.mipi.stream = 0; 
+	pinfo.mipi.stream = 0; /* dma_p */
 	pinfo.mipi.mdp_trigger = DSI_CMD_TRIGGER_SW;
 	pinfo.mipi.dma_trigger = DSI_CMD_TRIGGER_SW;
 	pinfo.mipi.frame_rate = 60;
@@ -2773,18 +2789,18 @@ static int __init mipi_command_samsung_init(void)
 	pinfo.lcd.v_front_porch = pinfo.lcdc.v_front_porch;
 	pinfo.lcd.v_pulse_width = pinfo.lcdc.v_pulse_width;
 
-	pinfo.lcdc.border_clr = 0;	
-	pinfo.lcdc.underflow_clr = 0xff;	
+	pinfo.lcdc.border_clr = 0;	/* blk */
+	pinfo.lcdc.underflow_clr = 0xff;	/* blue */
 	pinfo.lcdc.hsync_skew = 0;
 	pinfo.bl_max = 255;
 	pinfo.bl_min = 1;
 	pinfo.fb_num = 2;
 	pinfo.clk_rate = 830000000;
 
-	
+	//pinfo.is_3d_panel = FB_TYPE_3D_PANEL;
 	pinfo.lcd.vsync_enable = TRUE;
 	pinfo.lcd.hw_vsync_mode = TRUE;
-	pinfo.lcd.refx100 = 6000; 
+	pinfo.lcd.refx100 = 6000; /* adjust refx100 to prevent tearing */
 
 	pinfo.mipi.mode = DSI_CMD_MODE;
 	pinfo.mipi.dst_format = DSI_CMD_DST_FORMAT_RGB888;
@@ -2798,10 +2814,10 @@ static int __init mipi_command_samsung_init(void)
 	pinfo.mipi.tx_eot_append = TRUE;
 	pinfo.mipi.t_clk_post = 0x3;
 	pinfo.mipi.t_clk_pre = 0x2B;
-	pinfo.mipi.stream = 0;	
+	pinfo.mipi.stream = 0;	/* dma_p */
 	pinfo.mipi.mdp_trigger = DSI_CMD_TRIGGER_NONE;
 	pinfo.mipi.dma_trigger = DSI_CMD_TRIGGER_SW;
-	pinfo.mipi.te_sel = 1; 
+	pinfo.mipi.te_sel = 1; /* TE from vsycn gpio */
 	pinfo.mipi.interleave_max = 1;
 	pinfo.mipi.insert_dcs_cmd = TRUE;
 	pinfo.mipi.wr_mem_continue = 0x3c;
@@ -2809,7 +2825,7 @@ static int __init mipi_command_samsung_init(void)
 	pinfo.mipi.esc_byte_ratio = 5;
 
 	pinfo.mipi.frame_rate = 60;
-	
+	/* For jdi cut1 bug, need nop for TE command*/
 	pinfo.lcdc.no_set_tear = 1;
 
 	pinfo.mipi.dsi_phy_db = &dsi_jdi_cmd_mode_phy_db;
@@ -2999,4 +3015,5 @@ static int __init m7wl_panel_init(void)
 
 	return platform_driver_register(&this_driver);
 }
+//module_init(m7wl_panel_init);
 device_initcall_sync(m7wl_panel_init);

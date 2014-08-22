@@ -21,14 +21,16 @@
 
 #define CTRL_DEV_MAX_LEN 10
 
+//HTC_DBG+++
 #define HTC_LOG_RMNET_USB_CTRL
 #define HTC_DEBUG_QMI_STUCK
 #define HTC_MDM_RESTART_IF_RMNET_OPEN_TIMEOUT
 #define RMNET_OPEN_TIMEOUT_MS	30000
+//HTC_DBG---
 
 struct rmnet_ctrl_dev {
 
-	
+	/*for debugging purpose*/
 	char			name[CTRL_DEV_MAX_LEN];
 
 	struct cdev		cdev;
@@ -44,9 +46,11 @@ struct rmnet_ctrl_dev {
 	void			*intbuf;
 	struct usb_ctrlrequest	*in_ctlreq;
 
+//--------------------------------------------------------
 #ifdef HTC_DEBUG_QMI_STUCK
 	struct timer_list rcv_timer;
-#endif	
+#endif	//HTC_DEBUG_QMI_STUCK
+//--------------------------------------------------------
 
 	spinlock_t		rx_lock;
 	struct mutex		dev_lock;
@@ -61,21 +65,27 @@ struct rmnet_ctrl_dev {
 
 	bool			is_connected;
 
+//--------------------------------------------------------
 #ifdef HTC_MDM_RESTART_IF_RMNET_OPEN_TIMEOUT
 	unsigned long  connected_jiffies;
-#endif	
+#endif	//HTC_MDM_RESTART_IF_RMNET_OPEN_TIMEOUT
+//--------------------------------------------------------
 
-	
+	/*input control lines (DSR, CTS, CD, RI)*/
 	unsigned int		cbits_tolocal;
 
-	
+	/*output control lines (DTR, RTS)*/
 	unsigned int		cbits_tomdm;
 
+	/*
+	 * track first resp available from mdm when it boots up
+	 * to avoid bigger  timeout value used by qmuxd
+	 */
 	bool			resp_available;
 
 	unsigned int		mdm_wait_timeout;
 
-	
+	/*counters*/
 	unsigned int		snd_encap_cmd_cnt;
 	unsigned int		get_encap_resp_cnt;
 	unsigned int		resp_avail_cnt;
@@ -87,7 +97,10 @@ struct rmnet_ctrl_dev {
 
 extern struct rmnet_ctrl_dev *ctrl_dev[];
 
+/* ++SSD_RIL */
+/*extern int rmnet_usb_ctrl_start(struct rmnet_ctrl_dev *);*/
 extern int rmnet_usb_ctrl_start_rx(struct rmnet_ctrl_dev *);
+/* --SSD_RIL */
 extern int rmnet_usb_ctrl_suspend(struct rmnet_ctrl_dev *dev);
 extern int rmnet_usb_ctrl_init(void);
 extern void rmnet_usb_ctrl_exit(void);
@@ -96,4 +109,4 @@ extern int rmnet_usb_ctrl_probe(struct usb_interface *intf,
 		struct rmnet_ctrl_dev *dev);
 extern void rmnet_usb_ctrl_disconnect(struct rmnet_ctrl_dev *);
 
-#endif 
+#endif /* __RMNET_USB_H*/
